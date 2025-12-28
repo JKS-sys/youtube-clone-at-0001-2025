@@ -18,6 +18,7 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:3000",
   "https://youtube-clone-at-0001-2025.vercel.app",
+  "https://youtube-clone-*.vercel.app", // Allow all subdomains
 ];
 
 app.use(
@@ -26,24 +27,25 @@ app.use(
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
 
-      if (allowedOrigins.indexOf(origin) === -1) {
-        // If origin is not in allowed list, check if it's a subdomain of your Vercel app
-        if (
-          origin.includes("youtube-clone-at-") &&
-          origin.includes(".vercel.app")
-        ) {
-          return callback(null, true);
-        }
+      // Allow localhost for development
+      if (origin.includes("localhost")) {
+        return callback(null, true);
+      }
 
-        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-        console.error("CORS Error:", msg);
+      // Allow Vercel preview deployments
+      if (origin.includes("vercel.app")) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = `CORS policy: ${origin} not allowed`;
         return callback(new Error(msg), false);
       }
       return callback(null, true);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
 

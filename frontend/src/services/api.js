@@ -12,10 +12,13 @@ const getBaseURL = () => {
   }
 
   // For Vercel deployment - use relative path
+  if (window.location.hostname.includes("vercel.app")) {
+    return "/api";
+  }
+
+  // Default to relative
   return "/api";
 };
-
-console.log("🔧 API Base URL:", getBaseURL());
 
 const API = axios.create({
   baseURL: getBaseURL(),
