@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/vercel.js",
+      "src": "api/*.js",
       "use": "@vercel/node"
     },
     {
@@ -16,11 +16,14 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/backend/vercel.js"
+      "dest": "/api/index.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/frontend/dist/$1"
+      "dest": "/frontend/dist/$1",
+      "headers": {
+        "Cache-Control": "s-maxage=0"
+      }
     }
   ]
 }

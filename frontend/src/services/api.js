@@ -1,9 +1,8 @@
-// frontend/src/services/api.js
 import axios from "axios";
 
-// Use absolute URL for development, relative for production
+// Determine API URL based on environment
 const getBaseURL = () => {
-  // If we're on localhost, use the full URL
+  // Local development
   if (
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1"
@@ -11,14 +10,12 @@ const getBaseURL = () => {
     return "http://localhost:5001/api";
   }
 
-  // For Vercel deployment - use relative path
-  if (window.location.hostname.includes("vercel.app")) {
-    return "/api";
-  }
-
-  // Default to relative
-  return "/api";
+  // Vercel production
+  return "/api"; // Relative path for same domain
 };
+
+console.log("🔧 API Base URL:", getBaseURL());
+console.log("🔧 Current host:", window.location.hostname);
 
 const API = axios.create({
   baseURL: getBaseURL(),
@@ -28,7 +25,6 @@ const API = axios.create({
   },
 });
 
-// **FIX 1: Better request interceptor**
 API.interceptors.request.use(
   (config) => {
     // Get token from localStorage (not from context)

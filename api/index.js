@@ -2,23 +2,31 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+
+// Routes
+import authRoutes from "../backend/routes/auth.js";
+import videoRoutes from "../backend/routes/videos.js";
+import channelRoutes from "../backend/routes/channels.js";
 
 dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// CORS
+app.use(
+  cors({
+    origin: [
+      "https://youtube-clone-at-0001-2025.vercel.app",
+      "https://youtube-clone-*.vercel.app",
+      "http://localhost:3000",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
-// Import routes from backend
-import authRoutes from "../backend/routes/auth.js";
-import videoRoutes from "../backend/routes/videos.js";
-import channelRoutes from "../backend/routes/channels.js";
-
-// Use routes
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/videos", videoRoutes);
 app.use("/api/channels", channelRoutes);
@@ -35,16 +43,19 @@ app.get("/api/health", (req, res) => {
 // Connect to MongoDB
 const connectDB = async () => {
   try {
-    const mongoURI =
-      process.env.MONGODB_URI || "mongodb://localhost:27017/youtube-clone";
+    const mongoURI = process.env.MONGODB_URI;
+    if (!mongoURI) {
+      throw new Error("MONGODB_URI is not defined");
+    }
     await mongoose.connect(mongoURI);
     console.log("✅ MongoDB Connected");
   } catch (error) {
     console.error("❌ MongoDB Connection Error:", error);
+    // Don't exit in serverless environment
   }
 };
 
-// Connect DB
+// Connect to DB
 connectDB();
 
 // Export for Vercel
