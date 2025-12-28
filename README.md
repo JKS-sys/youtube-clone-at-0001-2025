@@ -243,61 +243,6 @@ npm run dev
 - **Channel** (`pages/Channel.jsx`) - Channel management
 - **CreateChannel** (`pages/CreateChannel.jsx`) - Channel creation
 
-## 🚀 Deployment
-
-### **Vercel Deployment**
-
-1. **Prepare for Deployment**
-
-```bash
-# Build frontend
-cd frontend
-npm run build
-
-# Create api/index.js for Vercel (see setup section)
-```
-
-2. **Vercel Configuration** (`vercel.json`)
-
-```json
-{
-  "version": 2,
-  "builds": [
-    { "src": "api/index.js", "use": "@vercel/node" },
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/index.js" },
-    { "src": "/(.*)", "dest": "/frontend/dist/$1" }
-  ]
-}
-```
-
-3. **Environment Variables on Vercel**
-
-```
-MONGODB_URI=your_mongodb_atlas_connection_string
-JWT_SECRET=your_secure_jwt_secret
-NODE_ENV=production
-```
-
-4. **Deploy Command**
-
-```bash
-vercel --prod
-```
-
-### **Manual Deployment Steps**
-
-1. Push code to GitHub repository
-2. Connect repository to Vercel
-3. Configure environment variables in Vercel dashboard
-4. Deploy automatically or manually trigger deployment
-
 ## 📱 Responsive Design
 
 The application is fully responsive across all devices:
@@ -454,12 +399,6 @@ src/
    Solution: Clear localStorage tokens and re-login
    ```
 
-4. **Vercel Deployment - API Returns HTML**
-   ```
-   Error: API returns HTML instead of JSON
-   Solution: Ensure correct vercel.json routing configuration
-   ```
-
 ### **Debug Commands**
 
 ```bash
@@ -523,23 +462,12 @@ This project is for educational purposes as part of a capstone project. Not inte
 
 - YouTube for design inspiration
 - MERN stack community for resources and tutorials
-- Vercel for hosting platform
 - MongoDB for database solution
-
-## 📞 Support
-
-For issues or questions:
-
-1. Check the [Troubleshooting](#troubleshooting) section
-2. Review API documentation
-3. Check console logs for errors
-4. Contact: [Your Email/Contact Info]
 
 ---
 
 **Project Status**: ✅ Complete - Ready for Capstone Submission  
-**Last Updated**: December 2024  
-**Deployment**: Vercel  
+**Last Updated**: December 2025  
 **Database**: MongoDB Atlas
 
 _This project demonstrates full-stack development skills with the MERN stack, implementing real-world features with production-ready code quality._
