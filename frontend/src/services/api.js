@@ -18,8 +18,17 @@ export const videoAPI = {
   getVideos: (search = "", category = "All") =>
     API.get("/videos", { params: { search, category } }),
   getVideo: (id) => API.get(`/videos/${id}`),
+  createVideo: (videoData) => API.post("/videos", videoData),
+  updateVideo: (id, videoData) => API.put(`/videos/${id}`, videoData),
+  deleteVideo: (id) => API.delete(`/videos/${id}`),
+  likeVideo: (id) => API.post(`/videos/${id}/like`),
+  dislikeVideo: (id) => API.post(`/videos/${id}/dislike`),
   addComment: (videoId, text) =>
     API.post(`/videos/${videoId}/comments`, { text }),
+  updateComment: (videoId, commentId, text) =>
+    API.put(`/videos/${videoId}/comments/${commentId}`, { text }),
+  deleteComment: (videoId, commentId) =>
+    API.delete(`/videos/${videoId}/comments/${commentId}`),
 };
 
 // Auth API functions
@@ -34,6 +43,7 @@ export const authAPI = {
 export const channelAPI = {
   createChannel: (channelData) => API.post("/channels", channelData),
   getChannel: (id) => API.get(`/channels/${id}`),
+  getUserChannels: (userId) => API.get(`/channels/user/${userId}`),
   updateChannel: (id, channelData) => API.put(`/channels/${id}`, channelData),
   deleteChannel: (id) => API.delete(`/channels/${id}`),
 };

@@ -20,6 +20,11 @@ const Sidebar = () => {
     { icon: <FaHistory />, label: "History", path: "/history" },
     { icon: <FaPlayCircle />, label: "Your videos", path: "/your-videos" },
     { icon: <FaThumbsUp />, label: "Liked videos", path: "/liked-videos" },
+    {
+      icon: <FaPlusCircle />,
+      label: "Create Channel",
+      path: "/create-channel",
+    },
   ];
 
   const categories = [

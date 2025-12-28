@@ -1,0 +1,91 @@
+.like-dislike-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 20px 0;
+  padding: 15px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.like-dislike-stats {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #606060;
+}
+
+.stat-item {
+  font-weight: 500;
+}
+
+.divider {
+  color: #909090;
+}
+
+.like-dislike-buttons {
+  display: flex;
+  gap: 15px;
+}
+
+.like-btn,
+.dislike-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  color: #606060;
+}
+
+.like-btn:hover {
+  background: #def1ff;
+  border-color: #065fd4;
+  color: #065fd4;
+}
+
+.dislike-btn:hover {
+  background: #ffe6e6;
+  border-color: #ff0000;
+  color: #ff0000;
+}
+
+.like-btn.active {
+  background: #065fd4;
+  color: white;
+  border-color: #065fd4;
+}
+
+.dislike-btn.active {
+  background: #ff0000;
+  color: white;
+  border-color: #ff0000;
+}
+
+.like-btn.active:hover,
+.dislike-btn.active:hover {
+  opacity: 0.9;
+}
+
+.like-btn .icon,
+.dislike-btn .icon {
+  font-size: 16px;
+}
+
+.like-btn:disabled,
+.dislike-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.checkmark {
+  margin-left: 5px;
+  font-weight: bold;
+}

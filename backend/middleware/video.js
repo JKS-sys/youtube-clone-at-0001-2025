@@ -181,4 +181,124 @@ router.post("/:id/comments", protect, async (req, res) => {
   }
 });
 
+// Update comment
+router.put("/:videoId/comments/:commentId", protect, async (req, res) => {
+  try {
+    const { videoId, commentId } = req.params;
+    const { text } = req.body;
+
+    if (!text || text.trim() === "") {
+      return res.status(400).json({ message: "Comment text is required" });
+    }
+
+    const video = await Video.findById(videoId);
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    const comment = video.comments.id(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Comment not found" });
+    }
+
+    // Check if user owns the comment
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to edit this comment" });
+    }
+
+    comment.text = text.trim();
+    await video.save();
+
+    res.json(comment);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete comment
+router.delete("/:videoId/comments/:commentId", protect, async (req, res) => {
+  try {
+    const { videoId, commentId } = req.params;
+
+    const video = await Video.findById(videoId);
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    const comment = video.comments.id(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Comment not found" });
+    }
+
+    // Check if user owns the comment
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this comment" });
+    }
+
+    video.comments.pull(commentId);
+    await video.save();
+
+    res.json({ message: "Comment deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update video
+router.put("/:id", protect, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    // Check if user owns the video
+    if (video.uploader.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to edit this video" });
+    }
+
+    const updatedVideo = await Video.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    )
+      .populate("uploader", "username avatar")
+      .populate("channelId", "channelName");
+
+    res.json(updatedVideo);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete video
+router.delete("/:id", protect, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    // Check if user owns the video
+    if (video.uploader.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this video" });
+    }
+
+    await video.deleteOne();
+    res.json({ message: "Video deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 export default router;
