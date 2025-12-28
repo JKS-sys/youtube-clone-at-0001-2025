@@ -1,7 +1,16 @@
 import axios from "axios";
 
+const getBaseURL = () => {
+  if (window.location.hostname.includes("vercel.app")) {
+    return "/api";
+  }
+
+  return "http://localhost:5001/api";
+};
+
 const API = axios.create({
-  baseURL: "http://localhost:5001/api",
+  baseURL: getBaseURL(),
+  timeout: 10000,
 });
 
 // Add token to requests
