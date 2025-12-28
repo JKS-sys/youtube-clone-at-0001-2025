@@ -1,5 +1,4 @@
-// frontend/src/components/LikeDislikeButtons.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { FaThumbsUp, FaThumbsDown } from "react-icons/fa";
 import { videoAPI } from "../services/api";
 import "./LikeDislikeButtons.css";
@@ -13,10 +12,6 @@ const LikeDislikeButtons = ({
   const [likes, setLikes] = useState(initialLikes);
   const [dislikes, setDislikes] = useState(initialDislikes);
   const [loading, setLoading] = useState(false);
-  const [userInteraction, setUserInteraction] = useState({
-    liked: false,
-    disliked: false,
-  });
 
   // Get current user from localStorage
   const getCurrentUser = () => {
@@ -29,28 +24,28 @@ const LikeDislikeButtons = ({
     }
   };
 
-  const currentUser = getCurrentUser();
+  // Compute user interaction ONCE, not in useEffect
+  const user = getCurrentUser();
   const isAuthenticated = !!localStorage.getItem("token");
 
-  // Update user interaction state
-  useEffect(() => {
-    if (currentUser && currentUser._id) {
-      const liked = Array.isArray(likes) && likes.includes(currentUser._id);
-      const disliked =
-        Array.isArray(dislikes) && dislikes.includes(currentUser._id);
-      setUserInteraction({ liked, disliked });
-    }
-  }, [currentUser, likes, dislikes]);
+  const liked =
+    user && user._id && Array.isArray(likes) && likes.includes(user._id);
+  const disliked =
+    user && user._id && Array.isArray(dislikes) && dislikes.includes(user._id);
 
-  const handleLike = async () => {
-    console.log("🔄 handleLike called");
-    console.log("🔍 Auth check:", {
-      token: localStorage.getItem("token") ? "Exists" : "Missing",
-      user: currentUser,
-    });
+  // Update state when props change (but only once)
+  useEffect(() => {
+    setLikes(initialLikes);
+    setDislikes(initialDislikes);
+  }, [initialLikes, initialDislikes]);
+
+  const handleLike = useCallback(async () => {
+    console.log("🔄 handleLike called for video:", videoId);
+    console.log("🔍 User authenticated:", isAuthenticated);
+    console.log("🔍 Current user:", user);
 
     // Check authentication
-    if (!isAuthenticated || !currentUser) {
+    if (!isAuthenticated || !user) {
       alert("Please login to like videos");
       window.location.href = "/auth";
       return;
@@ -58,23 +53,15 @@ const LikeDislikeButtons = ({
 
     try {
       setLoading(true);
+      console.log(`👍 Making API call to like video ${videoId}`);
 
-      // Make the API call
       const response = await videoAPI.likeVideo(videoId);
+      console.log("✅ Like response:", response.data);
 
       // Update state
       if (response.data) {
         setLikes(response.data.likes || []);
         setDislikes(response.data.dislikes || []);
-
-        // Update user interaction
-        if (currentUser._id) {
-          const wasLiked = userInteraction.liked;
-          setUserInteraction({
-            liked: !wasLiked,
-            disliked: false,
-          });
-        }
 
         // Callback for parent component
         if (onUpdate) {
@@ -83,8 +70,6 @@ const LikeDislikeButtons = ({
             dislikes: response.data.dislikes || [],
           });
         }
-
-        console.log("✅ Like successful");
       }
     } catch (error) {
       console.error("❌ Error liking video:", error);
@@ -95,24 +80,22 @@ const LikeDislikeButtons = ({
         localStorage.removeItem("user");
         alert("Your session has expired. Please login again.");
         window.location.href = "/auth";
-      } else if (error.message === "No authentication token") {
-        // No token at all
-        alert("Please login to like videos");
-        window.location.href = "/auth";
+      } else if (error.response?.status === 404) {
+        console.error("❌ 404 Error - Route not found. Check backend routes.");
+        alert("Like feature is currently unavailable. Please try again later.");
       } else {
-        // Other error
         alert("Failed to like video. Please try again.");
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [videoId, isAuthenticated, user, onUpdate]);
 
-  const handleDislike = async () => {
-    console.log("🔄 handleDislike called");
+  const handleDislike = useCallback(async () => {
+    console.log("🔄 handleDislike called for video:", videoId);
 
     // Check authentication
-    if (!isAuthenticated || !currentUser) {
+    if (!isAuthenticated || !user) {
       alert("Please login to dislike videos");
       window.location.href = "/auth";
       return;
@@ -120,19 +103,14 @@ const LikeDislikeButtons = ({
 
     try {
       setLoading(true);
+      console.log(`👎 Making API call to dislike video ${videoId}`);
+
       const response = await videoAPI.dislikeVideo(videoId);
+      console.log("✅ Dislike response:", response.data);
 
       if (response.data) {
         setLikes(response.data.likes || []);
         setDislikes(response.data.dislikes || []);
-
-        if (currentUser._id) {
-          const wasDisliked = userInteraction.disliked;
-          setUserInteraction({
-            liked: false,
-            disliked: !wasDisliked,
-          });
-        }
 
         if (onUpdate) {
           onUpdate({
@@ -140,8 +118,6 @@ const LikeDislikeButtons = ({
             dislikes: response.data.dislikes || [],
           });
         }
-
-        console.log("✅ Dislike successful");
       }
     } catch (error) {
       console.error("❌ Error disliking video:", error);
@@ -151,16 +127,18 @@ const LikeDislikeButtons = ({
         localStorage.removeItem("user");
         alert("Your session has expired. Please login again.");
         window.location.href = "/auth";
-      } else if (error.message === "No authentication token") {
-        alert("Please login to dislike videos");
-        window.location.href = "/auth";
+      } else if (error.response?.status === 404) {
+        console.error("❌ 404 Error - Route not found. Check backend routes.");
+        alert(
+          "Dislike feature is currently unavailable. Please try again later."
+        );
       } else {
         alert("Failed to dislike video. Please try again.");
       }
     } finally {
       setLoading(false);
     }
-  };
+  }, [videoId, isAuthenticated, user, onUpdate]);
 
   return (
     <div className="like-dislike-container">
@@ -176,25 +154,25 @@ const LikeDislikeButtons = ({
 
       <div className="like-dislike-buttons">
         <button
-          className={`like-btn ${userInteraction.liked ? "active" : ""}`}
+          className={`like-btn ${liked ? "active" : ""}`}
           onClick={handleLike}
           disabled={loading}
           title={isAuthenticated ? "Like this video" : "Login to like"}
         >
           <FaThumbsUp className="icon" />
           <span>Like</span>
-          {userInteraction.liked && <span className="checkmark">✓</span>}
+          {liked && <span className="checkmark">✓</span>}
         </button>
 
         <button
-          className={`dislike-btn ${userInteraction.disliked ? "active" : ""}`}
+          className={`dislike-btn ${disliked ? "active" : ""}`}
           onClick={handleDislike}
           disabled={loading}
           title={isAuthenticated ? "Dislike this video" : "Login to dislike"}
         >
           <FaThumbsDown className="icon" />
           <span>Dislike</span>
-          {userInteraction.disliked && <span className="checkmark">✓</span>}
+          {disliked && <span className="checkmark">✓</span>}
         </button>
       </div>
     </div>
