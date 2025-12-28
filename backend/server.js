@@ -15,12 +15,40 @@ dotenv.config();
 const app = express();
 
 // CORS middleware
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://youtube-clone-at-0001-2025.vercel.app",
+];
+
 app.use(
   cors({
-    origin: "http://localhost:3000", // Your frontend URL
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        // If origin is not in allowed list, check if it's a subdomain of your Vercel app
+        if (
+          origin.includes("youtube-clone-at-") &&
+          origin.includes(".vercel.app")
+        ) {
+          return callback(null, true);
+        }
+
+        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+        console.error("CORS Error:", msg);
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 // Other middleware
 app.use(express.json());
