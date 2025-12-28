@@ -1,6 +1,7 @@
+// frontend/src/pages/Auth.jsx
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { authAPI } from "../services/api";
+import { useAuth } from "../context/AuthContext";
 import "./Auth.css";
 
 const Auth = () => {
@@ -14,6 +15,7 @@ const Auth = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login, register } = useAuth();
 
   const handleChange = (e) => {
     setFormData({
@@ -29,35 +31,42 @@ const Auth = () => {
     setError("");
 
     try {
+      let result;
+
       if (isLogin) {
         // Login
-        const response = await authAPI.login(formData.email, formData.password);
-        const { token, ...userData } = response.data;
-        localStorage.setItem("user", JSON.stringify(userData));
-
-        alert("Login successful!");
-        navigate("/");
-        window.location.reload(); // Refresh to update header
+        result = await login(formData.email, formData.password);
       } else {
         // Register
         if (formData.password !== formData.confirmPassword) {
           throw new Error("Passwords do not match");
         }
-        const response = await authAPI.register(
+        if (formData.password.length < 6) {
+          throw new Error("Password must be at least 6 characters");
+        }
+        if (!formData.email.includes("@")) {
+          throw new Error("Invalid email format");
+        }
+
+        result = await register(
           formData.username,
           formData.email,
           formData.password
         );
-        const { token, ...userData } = response.data;
-        localStorage.setItem("user", JSON.stringify(userData));
-        alert("Registration successful!");
-        navigate("/");
-        window.location.reload();
+      }
+
+      if (result.success) {
+        console.log("✅ Auth successful, redirecting...");
+
+        // Force a full page reload to ensure all components get fresh auth state
+        setTimeout(() => {
+          window.location.href = "/";
+        }, 100);
+      } else {
+        throw new Error(result.message || "Authentication failed");
       }
     } catch (err) {
-      setError(
-        err.response?.data?.message || err.message || "Something went wrong"
-      );
+      setError(err.message || "Something went wrong");
       console.error("Auth error:", err);
     } finally {
       setLoading(false);
@@ -86,6 +95,7 @@ const Auth = () => {
                 value={formData.username}
                 onChange={handleChange}
                 required={!isLogin}
+                minLength="3"
               />
             </div>
           )}
@@ -113,6 +123,7 @@ const Auth = () => {
               value={formData.password}
               onChange={handleChange}
               required
+              minLength="6"
             />
           </div>
 
@@ -151,6 +162,12 @@ const Auth = () => {
               onClick={() => {
                 setIsLogin(!isLogin);
                 setError("");
+                setFormData({
+                  username: "",
+                  email: "",
+                  password: "",
+                  confirmPassword: "",
+                });
               }}
             >
               {isLogin ? "Sign Up" : "Sign In"}

@@ -1,61 +1,109 @@
+// frontend/src/context/AuthContext.jsx
 import React, { createContext, useState, useContext, useEffect } from "react";
 import axios from "axios";
 
 const AuthContext = createContext();
 
 export const useAuth = () => {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
 };
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const token = localStorage.getItem("token");
+  // Function to validate and set token
+  const setAuthToken = (token) => {
     if (token) {
-      // Set default axios header
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
-      // Verify token and get user data
-      verifyToken(token);
     } else {
-      setLoading(false);
+      delete axios.defaults.headers.common["Authorization"];
     }
-  }, []);
+  };
 
-  const verifyToken = async (token) => {
+  // Function to verify token and get user data
+  const verifyAndSetUser = async (token) => {
     try {
-      // You can call a verify endpoint or decode the token
-      // For now, we'll just store the token and assume it's valid
-      const response = await axios.get("http://localhost:5000/api/auth/me");
+      setAuthToken(token);
+      const response = await axios.get("http://localhost:5001/api/auth/me");
       setUser(response.data);
+      localStorage.setItem("user", JSON.stringify(response.data));
     } catch (error) {
       console.error("Token verification failed:", error);
       localStorage.removeItem("token");
-      delete axios.defaults.headers.common["Authorization"];
-    } finally {
-      setLoading(false);
+      localStorage.removeItem("user");
+      setAuthToken(null);
+      setUser(null);
     }
   };
+
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem("token");
+      const storedUser = localStorage.getItem("user");
+
+      if (token && storedUser) {
+        try {
+          // Parse stored user first for immediate UI update
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          setAuthToken(token);
+
+          // Then verify with server
+          await verifyAndSetUser(token);
+        } catch (error) {
+          console.error("Error initializing auth:", error);
+          localStorage.removeItem("token");
+          localStorage.removeItem("user");
+          setUser(null);
+          setAuthToken(null);
+        }
+      }
+      setLoading(false);
+    };
+
+    initializeAuth();
+
+    // Listen for storage changes (for cross-tab sync)
+    const handleStorageChange = (e) => {
+      if (e.key === "token" || e.key === "user") {
+        initializeAuth();
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, []);
 
   const login = async (email, password) => {
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        {
-          email,
-          password,
-        }
+        "http://localhost:5001/api/auth/login",
+        { email, password }
       );
 
       const { token, ...userData } = response.data;
+
+      // Store everything
       localStorage.setItem("token", token);
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      localStorage.setItem("user", JSON.stringify(userData));
+
+      // Set axios header
+      setAuthToken(token);
+
+      // Set user state
       setUser(userData);
+
+      // Dispatch event for other components to know about login
+      window.dispatchEvent(new Event("userLoggedIn"));
 
       return { success: true };
     } catch (error) {
+      console.error("Login error:", error);
       return {
         success: false,
         message: error.response?.data?.message || "Login failed",
@@ -66,21 +114,22 @@ export const AuthProvider = ({ children }) => {
   const register = async (username, email, password) => {
     try {
       const response = await axios.post(
-        "http://localhost:5000/api/auth/register",
-        {
-          username,
-          email,
-          password,
-        }
+        "http://localhost:5001/api/auth/register",
+        { username, email, password }
       );
 
       const { token, ...userData } = response.data;
+
       localStorage.setItem("token", token);
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+      localStorage.setItem("user", JSON.stringify(userData));
+      setAuthToken(token);
       setUser(userData);
+
+      window.dispatchEvent(new Event("userLoggedIn"));
 
       return { success: true };
     } catch (error) {
+      console.error("Register error:", error);
       return {
         success: false,
         message: error.response?.data?.message || "Registration failed",
@@ -89,9 +138,21 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    setUser(null);
     localStorage.removeItem("token");
-    delete axios.defaults.headers.common["Authorization"];
+    localStorage.removeItem("user");
+    setAuthToken(null);
+    setUser(null);
+    window.dispatchEvent(new Event("userLoggedOut"));
+  };
+
+  // Helper function to check if user is authenticated
+  const isAuthenticated = () => {
+    return !!localStorage.getItem("token");
+  };
+
+  // Helper to get token directly
+  const getToken = () => {
+    return localStorage.getItem("token");
   };
 
   const value = {
@@ -100,6 +161,8 @@ export const AuthProvider = ({ children }) => {
     register,
     logout,
     loading,
+    isAuthenticated,
+    getToken,
   };
 
   return (
