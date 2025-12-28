@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import {
   FaHome,
@@ -11,21 +11,37 @@ import {
   FaPlusCircle,
   FaChevronLeft,
   FaChevronRight,
-  FaBars,
 } from "react-icons/fa";
 import "./Sidebar.css";
 
-const Sidebar = () => {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+const Sidebar = ({
+  isCollapsed = false,
+  mobileMenuOpen = false,
+  onToggleCollapse,
+  onCloseMobileMenu,
+}) => {
+  const [isMobile, setIsMobile] = useState(false);
 
-  const toggleSidebar = () => {
-    setIsCollapsed(!isCollapsed);
-  };
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth <= 768);
+    };
 
-  const toggleMobileMenu = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
-  };
+    checkIfMobile();
+    window.addEventListener("resize", checkIfMobile);
+
+    // Listen for toggle events from header
+    const handleToggleEvent = () => {
+      if (onToggleCollapse) onToggleCollapse();
+    };
+
+    window.addEventListener("toggleSidebar", handleToggleEvent);
+
+    return () => {
+      window.removeEventListener("resize", checkIfMobile);
+      window.removeEventListener("toggleSidebar", handleToggleEvent);
+    };
+  }, [onToggleCollapse]);
 
   const sidebarItems = [
     { icon: <FaHome />, label: "Home", path: "/" },
@@ -51,22 +67,34 @@ const Sidebar = () => {
     "Technology",
   ];
 
+  const handleItemClick = () => {
+    if (isMobile && onCloseMobileMenu) {
+      onCloseMobileMenu();
+    }
+  };
+
   return (
     <>
-      {/* Mobile Menu Button (visible only on small screens) */}
-      <button className="sidebar__mobile-toggle" onClick={toggleMobileMenu}>
-        <FaBars />
-      </button>
-
       <div
         className={`sidebar ${isCollapsed ? "sidebar--collapsed" : ""} ${
           mobileMenuOpen ? "sidebar--mobile-open" : ""
         }`}
-        onClick={() => mobileMenuOpen && setMobileMenuOpen(false)}
+        onClick={(e) => {
+          if (
+            isMobile &&
+            mobileMenuOpen &&
+            e.target.classList.contains("sidebar")
+          ) {
+            onCloseMobileMenu();
+          }
+        }}
       >
-        <div className="sidebar__toggle" onClick={toggleSidebar}>
-          {isCollapsed ? <FaChevronRight /> : <FaChevronLeft />}
-        </div>
+        {/* Desktop Toggle Button */}
+        {!isMobile && (
+          <button className="sidebar__toggle" onClick={onToggleCollapse}>
+            {isCollapsed ? <FaChevronRight /> : <FaChevronLeft />}
+          </button>
+        )}
 
         <div className="sidebar__section">
           {sidebarItems.map((item, index) => (
@@ -76,7 +104,7 @@ const Sidebar = () => {
               className={({ isActive }) =>
                 `sidebar__item ${isActive ? "active" : ""}`
               }
-              onClick={() => setMobileMenuOpen(false)}
+              onClick={handleItemClick}
             >
               <span className="sidebar__icon">{item.icon}</span>
               {!isCollapsed && (
@@ -91,7 +119,11 @@ const Sidebar = () => {
             <div className="sidebar__section">
               <h3 className="sidebar__title">Categories</h3>
               {categories.map((category, index) => (
-                <button key={index} className="sidebar__category">
+                <button
+                  key={index}
+                  className="sidebar__category"
+                  onClick={handleItemClick}
+                >
                   {category}
                 </button>
               ))}
@@ -105,11 +137,8 @@ const Sidebar = () => {
       </div>
 
       {/* Overlay for mobile */}
-      {mobileMenuOpen && (
-        <div
-          className="sidebar__overlay"
-          onClick={() => setMobileMenuOpen(false)}
-        />
+      {isMobile && mobileMenuOpen && (
+        <div className="sidebar__overlay" onClick={onCloseMobileMenu} />
       )}
     </>
   );

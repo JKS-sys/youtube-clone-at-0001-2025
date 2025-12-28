@@ -5,9 +5,9 @@
   overflow-y: auto;
   padding: 12px 0;
   flex-shrink: 0;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, transform 0.3s ease;
   position: relative;
-  height: 100%;
+  height: calc(100vh - 56px); /* Subtract header height */
   z-index: 100;
 }
 
@@ -30,10 +30,12 @@
   cursor: pointer;
   z-index: 101;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
 .sidebar__toggle:hover {
   background: #f5f5f5;
+  transform: scale(1.1);
 }
 
 .sidebar__section {
@@ -118,31 +120,6 @@
   white-space: nowrap;
 }
 
-/* Mobile styles */
-.sidebar__mobile-toggle {
-  display: none;
-  position: fixed;
-  top: 70px;
-  left: 10px;
-  z-index: 1000;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 4px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.sidebar__overlay {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 99;
-}
-
 /* When collapsed, hide labels */
 .sidebar--collapsed .sidebar__label,
 .sidebar--collapsed .sidebar__title,
@@ -162,7 +139,18 @@
   border-bottom: none;
 }
 
-/* Responsive Design */
+/* Mobile styles */
+.sidebar__overlay {
+  position: fixed;
+  top: 56px; /* Header height */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+  display: none;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
@@ -173,14 +161,11 @@
     transition: transform 0.3s ease;
     z-index: 100;
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    width: 240px !important; /* Force full width on mobile */
   }
 
   .sidebar--mobile-open {
     transform: translateX(0);
-  }
-
-  .sidebar__mobile-toggle {
-    display: block;
   }
 
   .sidebar__overlay {
@@ -188,12 +173,41 @@
   }
 
   .sidebar__toggle {
-    display: none;
+    display: none; /* Hide toggle button on mobile */
+  }
+
+  .sidebar--collapsed {
+    width: 240px !important; /* Don't collapse on mobile */
   }
 }
 
 @media (min-width: 769px) {
   .sidebar--collapsed {
     width: 72px;
+  }
+}
+
+/* Ensure content adjusts when sidebar collapses */
+.app__body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  width: 100%;
+}
+
+.app__content {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #f9f9f9;
+  transition: margin-left 0.3s ease;
+}
+
+@media (min-width: 769px) {
+  .app__content {
+    margin-left: 0;
+  }
+
+  .sidebar--collapsed + .app__content {
+    margin-left: 72px;
   }
 }

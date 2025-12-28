@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -18,13 +18,35 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import "./App.css";
 
 function App() {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleMenuClick = () => {
+    if (window.innerWidth <= 768) {
+      // Mobile: toggle mobile menu
+      setMobileMenuOpen(!mobileMenuOpen);
+    } else {
+      // Desktop: toggle collapse
+      setSidebarCollapsed(!sidebarCollapsed);
+    }
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+  };
+
   return (
     <AuthProvider>
       <Router>
         <div className="app">
-          <Header />
+          <Header onMenuClick={handleMenuClick} />
           <div className="app__body">
-            <Sidebar />
+            <Sidebar
+              isCollapsed={sidebarCollapsed}
+              mobileMenuOpen={mobileMenuOpen}
+              onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+              onCloseMobileMenu={closeMobileMenu}
+            />
             <div className="app__content">
               <ErrorBoundary>
                 <Routes>
@@ -57,7 +79,6 @@ function App() {
                     path="/liked-videos"
                     element={<Placeholder pageName="Liked Videos" />}
                   />
-                  {/* Catch all route - redirect to home */}
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </ErrorBoundary>

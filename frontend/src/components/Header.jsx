@@ -9,7 +9,7 @@ import {
 } from "react-icons/fa";
 import "./Header.css";
 
-const Header = () => {
+const Header = ({ onMenuClick }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
@@ -22,7 +22,6 @@ const Header = () => {
       }
     } catch (error) {
       console.error("Error parsing user data:", error);
-      // Clear invalid data
       localStorage.removeItem("user");
       localStorage.removeItem("token");
     }
@@ -32,7 +31,6 @@ const Header = () => {
     e.preventDefault();
     if (searchQuery.trim()) {
       navigate(`/?search=${encodeURIComponent(searchQuery.trim())}`);
-      // Refresh the video list
       window.dispatchEvent(new Event("searchUpdated"));
     }
   };
@@ -45,10 +43,19 @@ const Header = () => {
     window.location.reload();
   };
 
+  const handleMenuClick = () => {
+    if (onMenuClick) {
+      onMenuClick();
+    } else {
+      // Fallback: dispatch event for sidebar to listen to
+      window.dispatchEvent(new CustomEvent("toggleSidebar"));
+    }
+  };
+
   return (
     <header className="header">
       <div className="header__left">
-        <button className="header__menu">
+        <button className="header__menu" onClick={handleMenuClick}>
           <FaBars size={20} />
         </button>
         <Link to="/" className="header__logo">
