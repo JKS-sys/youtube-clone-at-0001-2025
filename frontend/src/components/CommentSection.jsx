@@ -156,6 +156,49 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
     setEditText("");
   };
 
+  const handleAddComment = async (e) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+
+    try {
+      const response = await videoAPI.addComment(videoId, newComment);
+      setComments([...comments, response.data]);
+      setNewComment("");
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Error adding comment:", error);
+      alert("Failed to add comment");
+    }
+  };
+
+  const handleEditComment = async (commentId, newText) => {
+    try {
+      await videoAPI.updateComment(videoId, commentId, newText);
+      setComments(
+        comments.map((comment) =>
+          comment._id === commentId ? { ...comment, text: newText } : comment
+        )
+      );
+      if (onUpdate) onUpdate();
+    } catch (error) {
+      console.error("Error editing comment:", error);
+      alert("Failed to edit comment");
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    if (window.confirm("Delete this comment?")) {
+      try {
+        await videoAPI.deleteComment(videoId, commentId);
+        setComments(comments.filter((comment) => comment._id !== commentId));
+        if (onUpdate) onUpdate();
+      } catch (error) {
+        console.error("Error deleting comment:", error);
+        alert("Failed to delete comment");
+      }
+    }
+  };
+
   const isCommentOwner = (comment) => {
     return user && comment.userId && comment.userId._id === user._id;
   };

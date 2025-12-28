@@ -32,6 +32,7 @@ const Header = ({ onMenuClick }) => {
     if (searchQuery.trim()) {
       navigate(`/?search=${encodeURIComponent(searchQuery.trim())}`);
       window.dispatchEvent(new Event("searchUpdated"));
+      window.location.reload();
     }
   };
 

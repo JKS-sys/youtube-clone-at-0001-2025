@@ -16,6 +16,8 @@ const Channel = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [editingVideo, setEditingVideo] = useState(null);
   const [videoForm, setVideoForm] = useState({
     title: "",
     description: "",
@@ -108,6 +110,27 @@ const Channel = () => {
     } catch (error) {
       console.error("Error deleting video:", error);
       alert("Failed to delete video");
+    }
+  };
+
+  // Add video function
+  const handleAddVideo = async (e) => {
+    e.preventDefault();
+    try {
+      const videoData = {
+        ...videoForm,
+        channelId: id,
+        uploader: user._id,
+        tags: videoForm.tags.split(",").map((tag) => tag.trim()),
+      };
+
+      const response = await videoAPI.createVideo(videoData);
+      setVideos([response.data, ...videos]);
+      setShowVideoModal(false);
+      alert("Video uploaded successfully!");
+    } catch (error) {
+      console.error("Error uploading video:", error);
+      alert("Failed to upload video");
     }
   };
 

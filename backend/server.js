@@ -12,6 +12,10 @@ import channelRoutes from "./routes/channels.js";
 
 dotenv.config();
 
+// Use this for MongoDB connection
+const mongoURI =
+  process.env.MONGODB_URI || "mongodb://localhost:27017/youtube-clone";
+
 const app = express();
 
 // CORS middleware
@@ -77,7 +81,7 @@ app.get("/api/health", (req, res) => {
 const connectDB = async () => {
   try {
     await mongoose.connect(
-      process.env.MONGODB_URI || "mongodb://localhost:27017/youtube-clone"
+      mongoURI || "mongodb://localhost:27017/youtube-clone"
     );
     console.log("✅ MongoDB Connected");
   } catch (error) {
