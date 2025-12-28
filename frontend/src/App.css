@@ -55,3 +55,13 @@ body {
     margin-left: 72px;
   }
 }
+.demo-notice {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  padding: 12px 20px;
+  margin: 10px 20px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+}
