@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -15,18 +15,39 @@ import CreateChannel from "./pages/CreateChannel";
 import Auth from "./pages/Auth";
 import Placeholder from "./pages/Placeholder";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { testAPI } from "./services/api";
 import "./App.css";
 
 function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [apiStatus, setApiStatus] = useState("checking");
+
+  useEffect(() => {
+    // Test API connection on app start
+    const checkAPI = async () => {
+      try {
+        const isConnected = await testAPI();
+        setApiStatus(isConnected ? "connected" : "disconnected");
+
+        if (!isConnected) {
+          console.warn(
+            "⚠️ Backend API is not reachable. Some features may not work."
+          );
+        }
+      } catch (error) {
+        setApiStatus("error");
+        console.error("❌ API check failed:", error);
+      }
+    };
+
+    checkAPI();
+  }, []);
 
   const handleMenuClick = () => {
     if (window.innerWidth <= 768) {
-      // Mobile: toggle mobile menu
       setMobileMenuOpen(!mobileMenuOpen);
     } else {
-      // Desktop: toggle collapse
       setSidebarCollapsed(!sidebarCollapsed);
     }
   };
@@ -34,6 +55,9 @@ function App() {
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
   };
+
+  // Show API status warning
+  const showApiWarning = apiStatus !== "connected";
 
   return (
     <AuthProvider>
@@ -48,6 +72,18 @@ function App() {
               onCloseMobileMenu={closeMobileMenu}
             />
             <div className="app__content">
+              {showApiWarning && (
+                <div className="api-warning">
+                  <p>
+                    ⚠️ Backend connection: {apiStatus}.
+                    {apiStatus === "checking" && " Checking..."}
+                    {apiStatus === "disconnected" &&
+                      " Please ensure backend server is running on port 5001"}
+                    {apiStatus === "error" &&
+                      " Connection error. Check console for details."}
+                  </p>
+                </div>
+              )}
               <ErrorBoundary>
                 <Routes>
                   <Route path="/" element={<Home />} />

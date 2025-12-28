@@ -65,3 +65,18 @@ body {
   text-align: center;
   font-size: 14px;
 }
+
+.api-warning {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  color: #856404;
+  padding: 10px 15px;
+  margin: 10px 20px;
+  border-radius: 5px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.api-warning p {
+  margin: 0;
+}

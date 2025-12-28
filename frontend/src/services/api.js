@@ -1,32 +1,29 @@
-// frontend/src/services/api.js
 import axios from "axios";
 
-// Determine API URL based on environment
+// Get current hostname and protocol
 const getBaseURL = () => {
-  // Local development
-  if (
-    window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1"
-  ) {
-    return "http://localhost:5001/api";
+  const hostname = window.location.hostname;
+  const port = window.location.port;
+
+  // For development (localhost)
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `http://localhost:${port === "3000" ? "5001" : port || "5001"}/api`;
   }
 
-  // Production on Vercel - use relative path
+  // For Vercel/Production - use relative URL
   return "/api";
 };
 
-console.log("🔧 API Base URL:", getBaseURL());
-console.log("🔧 Current host:", window.location.hostname);
-
+// Create axios instance
 const API = axios.create({
   baseURL: getBaseURL(),
-  timeout: 15000,
+  timeout: 30000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
-// Request interceptor
+// Request interceptor to add auth token
 API.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
@@ -36,46 +33,51 @@ API.interceptors.request.use(
     return config;
   },
   (error) => {
-    console.error("❌ Request error:", error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor
+// Response interceptor for error handling
 API.interceptors.response.use(
   (response) => {
-    // Check if we got HTML instead of JSON (routing error)
-    if (
-      typeof response.data === "string" &&
-      response.data.includes("<!DOCTYPE html>")
-    ) {
-      console.error("❌ API ROUTING ERROR: Got HTML instead of JSON");
-      console.error("This means Vercel is not routing /api/* to backend");
-      throw new Error(
-        "API routing misconfigured. Check vercel.json and api/index.js"
-      );
-    }
     return response;
   },
   (error) => {
-    console.error("❌ API Error Details:", {
+    console.error("API Error:", {
       url: error.config?.url,
-      method: error.config?.method,
       status: error.response?.status,
       data: error.response?.data,
-      message: error.message,
     });
 
     if (error.response?.status === 401) {
+      // Clear invalid auth data
       localStorage.removeItem("token");
       localStorage.removeItem("user");
+      window.dispatchEvent(new Event("storage"));
+
+      // Redirect to login if not already there
+      if (!window.location.pathname.includes("/auth")) {
+        window.location.href = "/auth";
+      }
     }
 
     return Promise.reject(error);
   }
 );
 
-// Video API
+// Test API connection
+export const testAPI = async () => {
+  try {
+    const response = await API.get("/health");
+    console.log("✅ API Connection Test:", response.data);
+    return true;
+  } catch (error) {
+    console.error("❌ API Connection Failed:", error.message);
+    return false;
+  }
+};
+
+// Video API endpoints
 export const videoAPI = {
   getVideos: (search = "", category = "") => {
     const params = {};
@@ -119,14 +121,10 @@ export const authAPI = {
 // Channel API
 export const channelAPI = {
   createChannel: (channelData) => API.post("/channels", channelData),
-
   getChannel: (id) => API.get(`/channels/${id}`),
-
-  getUserChannels: (userId) => API.get(`/channels/user/${userId}`),
-
   updateChannel: (id, channelData) => API.put(`/channels/${id}`, channelData),
-
   deleteChannel: (id) => API.delete(`/channels/${id}`),
+  getUserChannels: (userId) => API.get(`/channels/user/${userId}`),
 };
 
 export default API;

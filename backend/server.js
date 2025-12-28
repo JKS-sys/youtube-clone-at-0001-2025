@@ -2,29 +2,37 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import path from "path";
-import { fileURLToPath } from "url";
 
 // Import routes
 import authRoutes from "./routes/auth.js";
 import videoRoutes from "./routes/videos.js";
 import channelRoutes from "./routes/channels.js";
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Get __dirname equivalent for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// CORS Configuration
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5001",
+  "https://youtube-clone-at-0001-2025.vercel.app", // Add your Vercel URL
+];
 
-// CORS configuration - ALLOW EVERYTHING FOR DEVELOPMENT
 app.use(
   cors({
-    origin: "*", // Allow ALL origins for now
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
@@ -32,223 +40,37 @@ app.use(
 // Handle preflight requests
 app.options("*", cors());
 
-// Parse JSON
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Body parsing middleware
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// ============ ADD MISSING ROUTES DIRECTLY HERE ============
-// This ensures PUT/DELETE work even if videos.js has issues
-
-import Video from "./models/Video.js";
-import { protect } from "./middleware/auth.js";
-
-// Direct PUT route for videos (adds to existing routes)
-app.put("/api/videos/:id", protect, async (req, res) => {
-  try {
-    console.log("✅ DIRECT PUT /api/videos/:id called for:", req.params.id);
-    console.log("Body:", req.body);
-
-    const video = await Video.findById(req.params.id);
-    if (!video) {
-      return res.status(404).json({ message: "Video not found" });
-    }
-
-    // Check if user owns the video
-    if (video.uploader.toString() !== req.user._id.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to edit this video" });
-    }
-
-    const updatedVideo = await Video.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    )
-      .populate("uploader", "username avatar")
-      .populate("channelId", "channelName");
-
-    console.log("✅ Video updated successfully:", updatedVideo.title);
-    res.json(updatedVideo);
-  } catch (error) {
-    console.error("❌ Error in direct PUT:", error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Direct DELETE route for videos
-app.delete("/api/videos/:id", protect, async (req, res) => {
-  try {
-    console.log("✅ DIRECT DELETE /api/videos/:id called for:", req.params.id);
-
-    const video = await Video.findById(req.params.id);
-    if (!video) {
-      return res.status(404).json({ message: "Video not found" });
-    }
-
-    // Check if user owns the video
-    if (video.uploader.toString() !== req.user._id.toString()) {
-      return res
-        .status(403)
-        .json({ message: "Not authorized to delete this video" });
-    }
-
-    await video.deleteOne();
-    console.log("✅ Video deleted successfully:", req.params.id);
-    res.json({ message: "Video deleted successfully" });
-  } catch (error) {
-    console.error("❌ Error in direct DELETE:", error);
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Direct comment routes
-app.put(
-  "/api/videos/:videoId/comments/:commentId",
-  protect,
-  async (req, res) => {
-    try {
-      const { videoId, commentId } = req.params;
-      const { text } = req.body;
-
-      console.log("✅ DIRECT PUT comment route:", { videoId, commentId });
-
-      if (!text || text.trim() === "") {
-        return res.status(400).json({ message: "Comment text is required" });
-      }
-
-      const video = await Video.findById(videoId);
-      if (!video) {
-        return res.status(404).json({ message: "Video not found" });
-      }
-
-      const comment = video.comments.id(commentId);
-      if (!comment) {
-        return res.status(404).json({ message: "Comment not found" });
-      }
-
-      // Check if user owns the comment
-      if (comment.userId.toString() !== req.user._id.toString()) {
-        return res
-          .status(403)
-          .json({ message: "Not authorized to edit this comment" });
-      }
-
-      comment.text = text.trim();
-      await video.save();
-
-      // Populate user info
-      const populatedVideo = await Video.findById(videoId).populate(
-        "comments.userId",
-        "username avatar"
-      );
-
-      const updatedComment = populatedVideo.comments.id(commentId);
-
-      res.json(updatedComment);
-    } catch (error) {
-      console.error("❌ Error in direct PUT comment:", error);
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
-
-app.delete(
-  "/api/videos/:videoId/comments/:commentId",
-  protect,
-  async (req, res) => {
-    try {
-      const { videoId, commentId } = req.params;
-      console.log("✅ DIRECT DELETE comment route:", { videoId, commentId });
-
-      const video = await Video.findById(videoId);
-      if (!video) {
-        return res.status(404).json({ message: "Video not found" });
-      }
-
-      const comment = video.comments.id(commentId);
-      if (!comment) {
-        return res.status(404).json({ message: "Comment not found" });
-      }
-
-      // Check if user owns the comment
-      if (comment.userId.toString() !== req.user._id.toString()) {
-        return res
-          .status(403)
-          .json({ message: "Not authorized to delete this comment" });
-      }
-
-      video.comments.pull(commentId);
-      await video.save();
-
-      res.json({ message: "Comment deleted successfully" });
-    } catch (error) {
-      console.error("❌ Error in direct DELETE comment:", error);
-      res.status(500).json({ message: error.message });
-    }
-  }
-);
-
-// ============ END OF DIRECT ROUTES ============
-
-// Use imported routes
+// API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/videos", videoRoutes);
 app.use("/api/channels", channelRoutes);
 
-// Health check
+// Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
-    message: "YouTube Clone API is running",
-    routes: {
-      "GET /api/videos": "Get all videos",
-      "PUT /api/videos/:id": "Update video (direct route)",
-      "DELETE /api/videos/:id": "Delete video (direct route)",
-    },
+    uptime: process.uptime(),
+    database:
+      mongoose.connection.readyState === 1 ? "Connected" : "Disconnected",
+    environment: process.env.NODE_ENV || "development",
   });
 });
 
 // Test endpoint
-app.get("/api/test-routes", (req, res) => {
-  const routes = [
-    { method: "GET", path: "/api/videos", description: "Get all videos" },
-    { method: "GET", path: "/api/videos/:id", description: "Get single video" },
-    { method: "POST", path: "/api/videos", description: "Create video" },
-    {
-      method: "PUT",
-      path: "/api/videos/:id",
-      description: "Update video (DIRECT ROUTE ADDED)",
+app.get("/api/test", (req, res) => {
+  res.json({
+    message: "YouTube Clone API is working!",
+    endpoints: {
+      auth: "/api/auth",
+      videos: "/api/videos",
+      channels: "/api/channels",
     },
-    {
-      method: "DELETE",
-      path: "/api/videos/:id",
-      description: "Delete video (DIRECT ROUTE ADDED)",
-    },
-    { method: "POST", path: "/api/videos/:id/like", description: "Like video" },
-    {
-      method: "POST",
-      path: "/api/videos/:id/dislike",
-      description: "Dislike video",
-    },
-    {
-      method: "POST",
-      path: "/api/videos/:id/comments",
-      description: "Add comment",
-    },
-    {
-      method: "PUT",
-      path: "/api/videos/:videoId/comments/:commentId",
-      description: "Update comment (DIRECT ROUTE)",
-    },
-    {
-      method: "DELETE",
-      path: "/api/videos/:videoId/comments/:commentId",
-      description: "Delete comment (DIRECT ROUTE)",
-    },
-  ];
-  res.json({ routes });
+  });
 });
 
 // MongoDB Connection
@@ -256,23 +78,45 @@ const connectDB = async () => {
   try {
     const mongoURI =
       process.env.MONGODB_URI || "mongodb://localhost:27017/youtube-clone";
-    console.log("🔗 Connecting to MongoDB...");
     await mongoose.connect(mongoURI);
-    console.log("✅ MongoDB Connected");
+    console.log("✅ MongoDB Connected Successfully");
+
+    // Check connection status
+    console.log("📊 Database Stats:");
+    console.log(`   Host: ${mongoose.connection.host}`);
+    console.log(`   Database: ${mongoose.connection.name}`);
+    console.log(`   Ready State: ${mongoose.connection.readyState}`);
   } catch (error) {
-    console.error("❌ MongoDB Connection Error:", error);
-    // Don't exit, keep server running for testing
+    console.error("❌ MongoDB Connection Error:", error.message);
+
+    // Try to reconnect in production
+    if (process.env.NODE_ENV === "production") {
+      setTimeout(connectDB, 5000);
+    }
   }
 };
 
-// Connect to database
+// Handle MongoDB connection events
+mongoose.connection.on("connected", () => {
+  console.log("📈 MongoDB Connected");
+});
+
+mongoose.connection.on("error", (err) => {
+  console.error("❌ MongoDB Connection Error:", err);
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.log("⚠️ MongoDB Disconnected");
+});
+
+// Connect to MongoDB
 connectDB();
 
+// Start server
 const PORT = process.env.PORT || 5001;
-
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`✅ Health check: http://localhost:${PORT}/api/health`);
-  console.log(`✅ Test routes: http://localhost:${PORT}/api/test-routes`);
-  console.log(`✅ CORS enabled for all origins`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
+  console.log(`🔧 API Test: http://localhost:${PORT}/api/test`);
 });
