@@ -1,3 +1,4 @@
+// frontend/src/services/api.js
 import axios from "axios";
 
 // Determine API URL based on environment
@@ -10,8 +11,8 @@ const getBaseURL = () => {
     return "http://localhost:5001/api";
   }
 
-  // Vercel production
-  return "/api"; // Relative path for same domain
+  // Production on Vercel - use relative path
+  return "/api";
 };
 
 console.log("🔧 API Base URL:", getBaseURL());
@@ -19,74 +20,67 @@ console.log("🔧 Current host:", window.location.hostname);
 
 const API = axios.create({
   baseURL: getBaseURL(),
-  timeout: 10000,
+  timeout: 15000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
+// Request interceptor
 API.interceptors.request.use(
   (config) => {
-    // Get token from localStorage (not from context)
     const token = localStorage.getItem("token");
-
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log(
-        `🔐 Token attached to ${config.method?.toUpperCase()} ${config.url}`
-      );
-    } else {
-      console.warn(
-        `⚠️ No token found for ${config.method?.toUpperCase()} ${config.url}`
-      );
     }
-
     return config;
   },
   (error) => {
-    console.error("❌ Request interceptor error:", error);
+    console.error("❌ Request error:", error);
     return Promise.reject(error);
   }
 );
 
-// **FIX 2: Better response interceptor**
+// Response interceptor
 API.interceptors.response.use(
   (response) => {
+    // Check if we got HTML instead of JSON (routing error)
+    if (
+      typeof response.data === "string" &&
+      response.data.includes("<!DOCTYPE html>")
+    ) {
+      console.error("❌ API ROUTING ERROR: Got HTML instead of JSON");
+      console.error("This means Vercel is not routing /api/* to backend");
+      throw new Error(
+        "API routing misconfigured. Check vercel.json and api/index.js"
+      );
+    }
     return response;
   },
   (error) => {
-    console.error("❌ API Error:", {
-      status: error.response?.status,
+    console.error("❌ API Error Details:", {
       url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
       message: error.message,
     });
 
-    // Handle 401 Unauthorized
     if (error.response?.status === 401) {
-      console.log("🔐 401 Unauthorized - Clearing auth data");
-
-      // Clear invalid auth data
       localStorage.removeItem("token");
       localStorage.removeItem("user");
-
-      // Only redirect if not already on auth page
-      if (!window.location.pathname.includes("/auth")) {
-        console.log("Redirecting to login...");
-        // We'll handle redirect in components, not here
-      }
     }
 
     return Promise.reject(error);
   }
 );
 
-// Video API functions
+// Video API
 export const videoAPI = {
   getVideos: (search = "", category = "") => {
     const params = {};
     if (search) params.search = search;
     if (category && category !== "All") params.category = category;
-
     return API.get("/videos", { params });
   },
 
@@ -98,35 +92,12 @@ export const videoAPI = {
 
   deleteVideo: (id) => API.delete(`/videos/${id}`),
 
-  likeVideo: (id) => {
-    console.log(`👍 Liking video ${id}`);
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("❌ No token available for like request");
-      return Promise.reject(new Error("No authentication token"));
-    }
-    return API.post(`/videos/${id}/like`);
-  },
+  likeVideo: (id) => API.post(`/videos/${id}/like`),
 
-  dislikeVideo: (id) => {
-    console.log(`👎 Disliking video ${id}`);
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("❌ No token available for dislike request");
-      return Promise.reject(new Error("No authentication token"));
-    }
-    return API.post(`/videos/${id}/dislike`);
-  },
+  dislikeVideo: (id) => API.post(`/videos/${id}/dislike`),
 
-  addComment: (videoId, text) => {
-    console.log(`💬 Adding comment to video ${videoId}`);
-    const token = localStorage.getItem("token");
-    if (!token) {
-      console.error("❌ No token available for comment request");
-      return Promise.reject(new Error("No authentication token"));
-    }
-    return API.post(`/videos/${videoId}/comments`, { text });
-  },
+  addComment: (videoId, text) =>
+    API.post(`/videos/${videoId}/comments`, { text }),
 
   updateComment: (videoId, commentId, text) =>
     API.put(`/videos/${videoId}/comments/${commentId}`, { text }),
@@ -135,23 +106,17 @@ export const videoAPI = {
     API.delete(`/videos/${videoId}/comments/${commentId}`),
 };
 
-// Auth API functions
+// Auth API
 export const authAPI = {
   login: (email, password) => API.post("/auth/login", { email, password }),
 
   register: (username, email, password) =>
     API.post("/auth/register", { username, email, password }),
 
-  getMe: () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      return Promise.reject(new Error("No token"));
-    }
-    return API.get("/auth/me");
-  },
+  getMe: () => API.get("/auth/me"),
 };
 
-// Channel API functions
+// Channel API
 export const channelAPI = {
   createChannel: (channelData) => API.post("/channels", channelData),
 
