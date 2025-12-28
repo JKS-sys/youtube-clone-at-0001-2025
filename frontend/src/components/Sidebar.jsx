@@ -8,6 +8,7 @@ import {
   FaPlayCircle,
   FaThumbsUp,
   FaFolder,
+  FaPlusCircle,
 } from "react-icons/fa";
 import "./Sidebar.css";
 

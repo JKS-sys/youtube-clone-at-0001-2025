@@ -1,0 +1,209 @@
+.create-channel-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+  padding: 20px;
+  background-color: #f9f9f9;
+}
+
+.create-channel-card {
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  width: 100%;
+}
+
+.create-channel-card h1 {
+  text-align: center;
+  margin-bottom: 10px;
+  color: #0f0f0f;
+  font-size: 28px;
+}
+
+.subtitle {
+  text-align: center;
+  color: #606060;
+  margin-bottom: 30px;
+  font-size: 14px;
+}
+
+.create-channel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #0f0f0f;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #065fd4;
+}
+
+.help-text {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  color: #909090;
+}
+
+.error-message {
+  background-color: #ffe6e6;
+  border: 1px solid #ff9999;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 20px;
+}
+
+.error-message p {
+  color: #d32f2f;
+  font-size: 14px;
+  margin: 0;
+  text-align: center;
+}
+
+.form-preview {
+  margin-top: 20px;
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.form-preview h3 {
+  margin-bottom: 15px;
+  color: #0f0f0f;
+}
+
+.preview-banner {
+  height: 150px;
+  background: #e0e0e0;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  overflow: hidden;
+}
+
+.preview-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #606060;
+}
+
+.preview-info h4 {
+  margin-bottom: 10px;
+  color: #0f0f0f;
+}
+
+.preview-info p {
+  font-size: 14px;
+  color: #606060;
+  line-height: 1.5;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.cancel-btn,
+.submit-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.cancel-btn {
+  background: #f2f2f2;
+  color: #606060;
+}
+
+.cancel-btn:hover {
+  background: #e5e5e5;
+}
+
+.submit-btn {
+  background: #065fd4;
+  color: white;
+}
+
+.submit-btn:hover:not(:disabled) {
+  background: #0347a4;
+}
+
+.submit-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.not-logged-in {
+  text-align: center;
+  padding: 40px;
+}
+
+.not-logged-in h2 {
+  margin-bottom: 20px;
+  color: #0f0f0f;
+}
+
+.not-logged-in button {
+  padding: 10px 20px;
+  background: #065fd4;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+@media (max-width: 480px) {
+  .create-channel-card {
+    padding: 30px 20px;
+  }
+
+  .create-channel-card h1 {
+    font-size: 24px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .cancel-btn,
+  .submit-btn {
+    width: 100%;
+  }
+}
