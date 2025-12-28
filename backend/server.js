@@ -91,7 +91,7 @@ const PORT = process.env.PORT || 5001;
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 CORS enabled for: http://localhost:3000`);
 });
 
-export default app;
+// Remove or comment out any module.exports line
+// export default app; // Only needed if you're deploying as serverless
