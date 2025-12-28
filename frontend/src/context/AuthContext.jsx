@@ -1,5 +1,11 @@
-// frontend/src/context/AuthContext.jsx
-import React, { createContext, useState, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useState,
+  useContext,
+  useEffect,
+  useCallback,
+} from "react";
+import { authAPI } from "../services/api";
 
 const AuthContext = createContext();
 
@@ -14,36 +20,57 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Simple function to get user from localStorage
-  const getUserFromStorage = () => {
-    try {
-      const userData = localStorage.getItem("user");
-      if (userData && userData !== "undefined") {
-        return JSON.parse(userData);
-      }
-    } catch (error) {
-      console.error("Error parsing user data:", error);
-    }
-    return null;
-  };
-
-  // Initialize auth state
+  // Load user from localStorage on initial load
   useEffect(() => {
-    const userData = getUserFromStorage();
-    setUser(userData);
-    setLoading(false);
+    const loadUserFromStorage = () => {
+      try {
+        const token = localStorage.getItem("token");
+        const userData = localStorage.getItem("user");
 
-    console.log("🔧 AuthProvider initialized:", { user: userData });
+        if (token && userData) {
+          const parsedUser = JSON.parse(userData);
+          setUser(parsedUser);
+
+          // Verify token is still valid by fetching profile
+          authAPI.getProfile().catch(() => {
+            // Token invalid, clear storage
+            localStorage.removeItem("token");
+            localStorage.removeItem("user");
+            localStorage.removeItem("userChannel");
+            setUser(null);
+          });
+        }
+      } catch (err) {
+        console.error("Error loading user from storage:", err);
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("userChannel");
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUserFromStorage();
   }, []);
 
-  // Listen for storage changes
+  // Listen for storage changes from other tabs
   useEffect(() => {
     const handleStorageChange = (e) => {
-      if (e.key === "user" || e.key === "token") {
-        const userData = getUserFromStorage();
-        console.log("🔄 Storage changed, updating user:", userData);
-        setUser(userData);
+      if (e.key === "user") {
+        try {
+          const userData = localStorage.getItem("user");
+          if (userData) {
+            setUser(JSON.parse(userData));
+          } else {
+            setUser(null);
+          }
+        } catch (error) {
+          console.error("Error parsing user data:", error);
+          setUser(null);
+        }
       }
     };
 
@@ -51,44 +78,102 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     try {
-      // We'll handle API call in the Auth component
-      // This function just updates state
-      const userData = getUserFromStorage();
-      setUser(userData);
-      return { success: true };
-    } catch (error) {
-      console.error("Login error:", error);
-      return { success: false, message: error.message };
-    }
-  };
+      setError(null);
+      const response = await authAPI.login(email, password);
 
-  const logout = () => {
+      if (response.data) {
+        const { token, ...userData } = response.data;
+
+        // Store in localStorage
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(userData));
+
+        // Update state
+        setUser(userData);
+
+        return { success: true, data: userData };
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Login failed");
+      return {
+        success: false,
+        error: err.response?.data?.message || "Login failed",
+      };
+    }
+  }, []);
+
+  const register = useCallback(async (username, email, password) => {
+    try {
+      setError(null);
+      const response = await authAPI.register(username, email, password);
+
+      if (response.data) {
+        const { token, ...userData } = response.data;
+
+        // Store in localStorage
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(userData));
+
+        // Update state
+        setUser(userData);
+
+        return { success: true, data: userData };
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Registration failed");
+      return {
+        success: false,
+        error: err.response?.data?.message || "Registration failed",
+      };
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    // Call API logout if needed
+    authAPI.logout();
+
+    // Clear state
+    setUser(null);
+    setError(null);
+
+    // Clear localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    setUser(null);
-    console.log("✅ Logged out");
-  };
+    localStorage.removeItem("userChannel");
 
-  // Helper to check if user is authenticated
-  const isAuthenticated = () => {
-    const token = localStorage.getItem("token");
-    const userData = localStorage.getItem("user");
-    return !!(token && userData);
-  };
+    // Redirect to home
+    window.location.href = "/";
+  }, []);
+
+  const updateUser = useCallback(
+    (userData) => {
+      setUser((prev) => ({ ...prev, ...userData }));
+      localStorage.setItem("user", JSON.stringify({ ...user, ...userData }));
+    },
+    [user]
+  );
+
+  const isAuthenticated = useCallback(() => {
+    return !!localStorage.getItem("token");
+  }, []);
+
+  const getToken = useCallback(() => {
+    return localStorage.getItem("token");
+  }, []);
 
   const value = {
     user,
-    login,
-    logout,
     loading,
+    error,
+    login,
+    register,
+    logout,
+    updateUser,
     isAuthenticated,
+    getToken,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

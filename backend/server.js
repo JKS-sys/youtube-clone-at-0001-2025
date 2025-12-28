@@ -12,111 +12,90 @@ dotenv.config();
 
 const app = express();
 
-// CORS Configuration
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:5001",
-  "https://youtube-clone-at-0001-2025.vercel.app", // Add your Vercel URL
-];
-
+// CORS configuration
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.indexOf(origin) === -1) {
-        const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-        return callback(new Error(msg), false);
-      }
-      return callback(null, true);
-    },
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://youtube-clone-at-0001-2025.vercel.app",
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
 // Handle preflight requests
 app.options("*", cors());
 
-// Body parsing middleware
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Test route
+app.get("/api/test", (req, res) => {
+  res.json({
+    message: "YouTube Clone API is working!",
+    timestamp: new Date().toISOString(),
+    version: "1.0.0",
+  });
+});
 
 // API Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/videos", videoRoutes);
 app.use("/api/channels", channelRoutes);
 
-// Health check endpoint
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
+    message: "YouTube Clone API is running",
     database:
       mongoose.connection.readyState === 1 ? "Connected" : "Disconnected",
-    environment: process.env.NODE_ENV || "development",
   });
 });
 
-// Test endpoint
-app.get("/api/test", (req, res) => {
-  res.json({
-    message: "YouTube Clone API is working!",
-    endpoints: {
-      auth: "/api/auth",
-      videos: "/api/videos",
-      channels: "/api/channels",
-    },
-  });
-});
-
-// MongoDB Connection
+// MongoDB connection
 const connectDB = async () => {
   try {
     const mongoURI =
       process.env.MONGODB_URI || "mongodb://localhost:27017/youtube-clone";
-    await mongoose.connect(mongoURI);
-    console.log("✅ MongoDB Connected Successfully");
 
-    // Check connection status
-    console.log("📊 Database Stats:");
-    console.log(`   Host: ${mongoose.connection.host}`);
-    console.log(`   Database: ${mongoose.connection.name}`);
-    console.log(`   Ready State: ${mongoose.connection.readyState}`);
+    console.log("🔗 Connecting to MongoDB...");
+
+    await mongoose.connect(mongoURI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+
+    console.log("✅ MongoDB Connected");
+
+    // Connection event handlers
+    mongoose.connection.on("error", (err) => {
+      console.error("❌ MongoDB connection error:", err);
+    });
+
+    mongoose.connection.on("disconnected", () => {
+      console.log("⚠️ MongoDB disconnected");
+    });
   } catch (error) {
-    console.error("❌ MongoDB Connection Error:", error.message);
-
-    // Try to reconnect in production
-    if (process.env.NODE_ENV === "production") {
-      setTimeout(connectDB, 5000);
-    }
+    console.error("❌ MongoDB connection failed:", error.message);
+    process.exit(1);
   }
 };
-
-// Handle MongoDB connection events
-mongoose.connection.on("connected", () => {
-  console.log("📈 MongoDB Connected");
-});
-
-mongoose.connection.on("error", (err) => {
-  console.error("❌ MongoDB Connection Error:", err);
-});
-
-mongoose.connection.on("disconnected", () => {
-  console.log("⚠️ MongoDB Disconnected");
-});
 
 // Connect to MongoDB
 connectDB();
 
 // Start server
 const PORT = process.env.PORT || 5001;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
-  console.log(`🔧 API Test: http://localhost:${PORT}/api/test`);
+  console.log(`📡 API available at http://localhost:${PORT}/api`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || "development"}`);
 });
+
+export default app;

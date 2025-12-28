@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       minlength: 3,
+      maxlength: 30,
     },
     email: {
       type: String,
@@ -16,6 +17,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       trim: true,
       lowercase: true,
+      match: [/^\S+@\S+\.\S+$/, "Please enter a valid email"],
     },
     password: {
       type: String,
@@ -32,15 +34,24 @@ const userSchema = new mongoose.Schema(
         ref: "Channel",
       },
     ],
+    // This is a property stored in the database
+    hasChannel: {
+      type: Boolean,
+      default: false,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
   }
 );
 
+// Password hashing middleware
 userSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
-
   try {
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
@@ -50,8 +61,18 @@ userSchema.pre("save", async function (next) {
   }
 });
 
+// Compare password method
 userSchema.methods.comparePassword = async function (candidatePassword) {
-  return await bcrypt.compare(candidatePassword, this.password);
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw new Error("Password comparison failed");
+  }
+};
+
+// Method to check if user has a channel (AVOIDS conflict with the property)
+userSchema.methods.userHasChannel = function () {
+  return this.channels && this.channels.length > 0;
 };
 
 export default mongoose.model("User", userSchema);

@@ -5,17 +5,21 @@ const channelSchema = new mongoose.Schema(
     channelName: {
       type: String,
       required: true,
-      trim: true,
       unique: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 50,
     },
     owner: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      unique: true,
     },
     description: {
       type: String,
       default: "",
+      maxlength: 500,
     },
     channelBanner: {
       type: String,
@@ -33,12 +37,27 @@ const channelSchema = new mongoose.Schema(
         ref: "Video",
       },
     ],
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
   }
 );
 
+// Pre-save middleware to update timestamps
+channelSchema.pre("save", function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Index for faster queries
 channelSchema.index({ owner: 1 });
 channelSchema.index({ channelName: 1 });
 
