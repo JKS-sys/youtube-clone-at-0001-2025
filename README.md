@@ -106,9 +106,12 @@ npm run dev
 
 1. Open browser to `http://localhost:3000`
 2. Click "Sign In" to register/login
-3. Use test credentials:
-   - **Email:** john@example.com
-   - **Password:** password123
+3. Register and explore features:
+   - Upload videos
+   - Comment on videos
+   - Like/dislike videos
+   - Create/manage channels
+   - Search and filter videos
 
 ## 📚 Database Schema
 
