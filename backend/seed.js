@@ -1,3 +1,4 @@
+// backend/seed-fix.js
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import User from "./models/User.js";
@@ -37,14 +38,14 @@ const seedDatabase = async () => {
       subscribers: [user._id],
     });
 
-    // Create sample videos
+    // Create sample videos with WORKING YouTube embed URLs
     const videos = await Video.create([
       {
         title: "Learn React in 30 Minutes",
         description: "A quick tutorial to get started with React",
-        videoUrl:
-          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
-        thumbnailUrl: "https://picsum.photos/320/180",
+        videoUrl: "https://www.youtube.com/embed/SqcY0GlETPk", // Working YouTube embed
+        thumbnailUrl:
+          "https://img.youtube.com/vi/SqcY0GlETPk/maxresdefault.jpg",
         channelId: channel._id,
         uploader: user._id,
         views: 15200,
@@ -54,14 +55,26 @@ const seedDatabase = async () => {
       {
         title: "JavaScript Basics for Beginners",
         description: "Learn JavaScript fundamentals",
-        videoUrl:
-          "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-        thumbnailUrl: "https://picsum.photos/320/181",
+        videoUrl: "https://www.youtube.com/embed/W6NZfCO5SIk", // Working YouTube embed
+        thumbnailUrl:
+          "https://img.youtube.com/vi/W6NZfCO5SIk/maxresdefault.jpg",
         channelId: channel._id,
         uploader: user._id,
         views: 25300,
         category: "Education",
         tags: ["javascript", "beginners"],
+      },
+      {
+        title: "Build a YouTube Clone with MERN Stack",
+        description: "Full stack YouTube clone tutorial",
+        videoUrl: "https://www.youtube.com/embed/FcwfjMebjTU", // Working YouTube embed
+        thumbnailUrl:
+          "https://img.youtube.com/vi/FcwfjMebjTU/maxresdefault.jpg",
+        channelId: channel._id,
+        uploader: user._id,
+        views: 10500,
+        category: "Technology",
+        tags: ["mern", "youtube", "clone"],
       },
     ]);
 
@@ -74,9 +87,12 @@ const seedDatabase = async () => {
     await user.save();
 
     console.log("✅ Database seeded successfully!");
+    console.log("====================================");
     console.log("Test Credentials:");
     console.log("Email: john@example.com");
     console.log("Password: password123");
+    console.log("====================================");
+    console.log("Working videos added with YouTube embed URLs");
 
     process.exit(0);
   } catch (error) {

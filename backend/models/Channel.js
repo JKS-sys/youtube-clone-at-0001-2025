@@ -39,4 +39,7 @@ const channelSchema = new mongoose.Schema(
   }
 );
 
+channelSchema.index({ owner: 1 });
+channelSchema.index({ channelName: 1 });
+
 export default mongoose.model("Channel", channelSchema);

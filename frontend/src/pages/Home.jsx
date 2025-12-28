@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import VideoCard from "../components/VideoCard";
 import FilterButtons from "../components/FilterButtons";
 import { videoAPI } from "../services/api";
@@ -6,11 +6,12 @@ import "./Home.css";
 
 const Home = () => {
   const [videos, setVideos] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [apiDebug, setApiDebug] = useState("");
+  const [channels, setChannels] = useState([]);
+  const [channelsLoading, setChannelsLoading] = useState(false);
 
   const categories = [
     "All",
@@ -22,7 +23,7 @@ const Home = () => {
     "Technology",
   ];
 
-  const fetchVideos = async () => {
+  const fetchVideos = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
@@ -36,7 +37,6 @@ const Home = () => {
 
       const response = await videoAPI.getVideos(searchParam, categoryParam);
 
-      // Debug logging
       console.log("📦 API Response:", {
         status: response.status,
         dataType: typeof response.data,
@@ -61,24 +61,73 @@ const Home = () => {
     } finally {
       setLoading(false);
     }
+  }, [selectedCategory]);
+
+  const fetchAllChannels = async () => {
+    try {
+      setChannelsLoading(true);
+      const response = await fetch("/api/channels");
+      const data = await response.json();
+      setChannels(data);
+      localStorage.setItem("allChannels", JSON.stringify(data));
+    } catch (error) {
+      console.error("Error fetching channels:", error);
+    } finally {
+      setChannelsLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchVideos();
+  }, [fetchVideos]);
 
-    // Listen for search updates
-    const handleSearchUpdate = () => {
-      fetchVideos();
-    };
+  // Separate effect for channels (optional - remove if not needed)
+  useEffect(() => {
+    // Only fetch channels if you need them for debugging
+    // fetchAllChannels();
+  }, []);
 
-    window.addEventListener("searchUpdated", handleSearchUpdate);
-    return () => {
-      window.removeEventListener("searchUpdated", handleSearchUpdate);
-    };
-  }, [selectedCategory, window.location.search]);
+  // If you want to keep the channels debug panel, use this instead:
+  const ChannelDebugPanel = () => (
+    <div
+      style={{ padding: "20px", background: "#f5f5f5", marginBottom: "20px" }}
+    >
+      <h2>All Channels Debug</h2>
+      <button onClick={fetchAllChannels} disabled={channelsLoading}>
+        {channelsLoading ? "Loading..." : "Refresh Channels"}
+      </button>
+      <div style={{ marginTop: "20px" }}>
+        {channels.map((channel) => (
+          <div
+            key={channel._id}
+            style={{
+              padding: "10px",
+              margin: "10px 0",
+              border: "1px solid #ddd",
+              borderRadius: "5px",
+              background: "white",
+            }}
+          >
+            <h3>{channel.channelName}</h3>
+            <p>ID: {channel._id}</p>
+            <p>Owner: {channel.owner?.username || channel.owner}</p>
+            <p>Videos: {channel.videos?.length || 0}</p>
+            <button
+              onClick={() => (window.location.href = `/channel/${channel._id}`)}
+            >
+              View Channel
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 
   return (
     <div className="home">
+      {/* Remove the ChannelDebugPanel in production */}
+      {/* <ChannelDebugPanel /> */}
+
       {/* Debug Info (remove in production) */}
       <div
         style={{
@@ -109,7 +158,6 @@ const Home = () => {
           <button onClick={() => fetchVideos()}>Retry</button>
           <button
             onClick={() => {
-              // Test API directly
               fetch("/api/health")
                 .then((res) => res.json())
                 .then((data) => console.log("Health:", data))

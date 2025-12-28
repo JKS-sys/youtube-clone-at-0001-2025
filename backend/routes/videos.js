@@ -1,5 +1,6 @@
 import express from "express";
 import Video from "../models/Video.js";
+import Channel from "../models/Channel.js";
 import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
@@ -15,7 +16,9 @@ router.get("/", async (req, res) => {
 
     const videos = await Video.find(query)
       .populate("uploader", "username avatar")
-      .populate("channelId", "channelName")
+      .populate("channelId", "channelName description owner")
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar")
       .sort({ createdAt: -1 });
 
     res.json(videos);
@@ -29,7 +32,9 @@ router.get("/:id", async (req, res) => {
   try {
     const video = await Video.findById(req.params.id)
       .populate("uploader", "username avatar")
-      .populate("channelId", "channelName")
+      .populate("channelId", "channelName description owner")
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar")
       .populate("comments.userId", "username avatar");
 
     if (!video) return res.status(404).json({ message: "Video not found" });
@@ -42,18 +47,42 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// Create video
+// Create video - FIXED: Now properly links video to channel
 router.post("/", protect, async (req, res) => {
   try {
-    const videoData = { ...req.body, uploader: req.user._id };
-    const video = await Video.create(videoData);
+    const { channelId, ...videoData } = req.body;
+
+    // Validate channel exists and user owns it
+    const channel = await Channel.findById(channelId);
+    if (!channel) {
+      return res.status(404).json({ message: "Channel not found" });
+    }
+
+    if (channel.owner.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to upload to this channel" });
+    }
+
+    const video = await Video.create({
+      ...videoData,
+      channelId,
+      uploader: req.user._id,
+    });
+
+    // Add video to channel's videos array
+    channel.videos.push(video._id);
+    await channel.save();
 
     const populatedVideo = await Video.findById(video._id)
       .populate("uploader", "username avatar")
-      .populate("channelId", "channelName");
+      .populate("channelId", "channelName description owner")
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar");
 
     res.status(201).json(populatedVideo);
   } catch (error) {
+    console.error("Error creating video:", error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -82,12 +111,18 @@ router.post("/:id/like", protect, async (req, res) => {
     }
 
     await video.save();
+
+    // Populate likes and dislikes
+    const updatedVideo = await Video.findById(req.params.id)
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar");
+
     res.json({
       success: true,
-      likes: video.likes.length,
-      dislikes: video.dislikes.length,
-      likesArray: video.likes,
-      dislikesArray: video.dislikes,
+      likes: updatedVideo.likes.length,
+      dislikes: updatedVideo.dislikes.length,
+      likesArray: updatedVideo.likes.map((user) => user._id),
+      dislikesArray: updatedVideo.dislikes.map((user) => user._id),
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -118,14 +153,85 @@ router.post("/:id/dislike", protect, async (req, res) => {
     }
 
     await video.save();
+
+    // Populate likes and dislikes
+    const updatedVideo = await Video.findById(req.params.id)
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar");
+
     res.json({
       success: true,
-      likes: video.likes.length,
-      dislikes: video.dislikes.length,
-      likesArray: video.likes,
-      dislikesArray: video.dislikes,
+      likes: updatedVideo.likes.length,
+      dislikes: updatedVideo.dislikes.length,
+      likesArray: updatedVideo.likes.map((user) => user._id),
+      dislikesArray: updatedVideo.dislikes.map((user) => user._id),
     });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update video
+router.put("/:id", protect, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    // Check if user owns the video
+    if (video.uploader.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to edit this video" });
+    }
+
+    const updatedVideo = await Video.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    )
+      .populate("uploader", "username avatar")
+      .populate("channelId", "channelName description owner")
+      .populate("likes", "username avatar")
+      .populate("dislikes", "username avatar");
+
+    res.json(updatedVideo);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete video
+router.delete("/:id", protect, async (req, res) => {
+  try {
+    const video = await Video.findById(req.params.id);
+
+    if (!video) {
+      return res.status(404).json({ message: "Video not found" });
+    }
+
+    // Check if user owns the video
+    if (video.uploader.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this video" });
+    }
+
+    // Remove video from channel's videos array
+    const channel = await Channel.findById(video.channelId);
+    if (channel) {
+      channel.videos = channel.videos.filter(
+        (vidId) => vidId.toString() !== video._id.toString()
+      );
+      await channel.save();
+    }
+
+    await video.deleteOne();
+    res.json({ message: "Video deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting video:", error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -158,6 +264,76 @@ router.post("/:id/comments", protect, async (req, res) => {
     const newComment =
       populatedVideo.comments[populatedVideo.comments.length - 1];
     res.status(201).json(newComment);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update comment
+router.put("/:videoId/comments/:commentId", protect, async (req, res) => {
+  try {
+    const { videoId, commentId } = req.params;
+    const { text } = req.body;
+
+    if (!text || text.trim() === "") {
+      return res.status(400).json({ message: "Comment text is required" });
+    }
+
+    const video = await Video.findById(videoId);
+    if (!video) return res.status(404).json({ message: "Video not found" });
+
+    const comment = video.comments.id(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Comment not found" });
+    }
+
+    // Check if user owns the comment
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to edit this comment" });
+    }
+
+    comment.text = text.trim();
+    await video.save();
+
+    // Populate user info
+    const populatedVideo = await Video.findById(videoId).populate(
+      "comments.userId",
+      "username avatar"
+    );
+
+    const updatedComment = populatedVideo.comments.id(commentId);
+    res.json(updatedComment);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete comment
+router.delete("/:videoId/comments/:commentId", protect, async (req, res) => {
+  try {
+    const { videoId, commentId } = req.params;
+
+    const video = await Video.findById(videoId);
+    if (!video) return res.status(404).json({ message: "Video not found" });
+
+    const comment = video.comments.id(commentId);
+    if (!comment) {
+      return res.status(404).json({ message: "Comment not found" });
+    }
+
+    // Check if user owns the comment
+    if (comment.userId.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Not authorized to delete this comment" });
+    }
+
+    video.comments.pull(commentId);
+    await video.save();
+
+    res.json({ message: "Comment deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
