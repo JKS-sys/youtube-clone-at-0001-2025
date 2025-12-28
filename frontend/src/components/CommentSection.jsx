@@ -1,13 +1,12 @@
+// frontend/src/components/CommentSection.jsx
 import React, { useState, useEffect } from "react";
 import {
   FaUserCircle,
   FaEdit,
   FaTrash,
-  FaReply,
   FaCheck,
   FaTimes,
 } from "react-icons/fa";
-import { useAuth } from "../context/AuthContext";
 import { videoAPI } from "../services/api";
 import "./CommentSection.css";
 
@@ -17,7 +16,20 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
   const [editingComment, setEditingComment] = useState(null);
   const [editText, setEditText] = useState("");
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
+
+  // Get current user from localStorage
+  const getCurrentUser = () => {
+    try {
+      const userData = localStorage.getItem("user");
+      return userData ? JSON.parse(userData) : null;
+    } catch (error) {
+      console.error("Error getting user:", error);
+      return null;
+    }
+  };
+
+  const user = getCurrentUser();
+  const isAuthenticated = !!localStorage.getItem("token");
 
   useEffect(() => {
     setComments(initialComments);
@@ -25,10 +37,20 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!newComment.trim() || !user) return;
+
+    // Check authentication
+    if (!isAuthenticated || !user) {
+      alert("Please login to add a comment");
+      window.location.href = "/auth";
+      return;
+    }
+
+    if (!newComment.trim()) return;
 
     try {
       setLoading(true);
+      console.log("💬 Submitting comment for video:", videoId);
+
       const response = await videoAPI.addComment(videoId, newComment);
 
       // Add the new comment to the list
@@ -38,17 +60,27 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
       if (onUpdate) {
         onUpdate();
       }
+
+      console.log("✅ Comment added successfully");
     } catch (error) {
-      console.error("Error adding comment:", error);
-      alert("Failed to add comment. Please try again.");
+      console.error("❌ Error adding comment:", error);
+
+      if (error.response?.status === 401) {
+        // Token is invalid
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        alert("Your session has expired. Please login again.");
+        window.location.href = "/auth";
+      } else if (error.message === "No authentication token") {
+        // No token at all
+        alert("Please login to add a comment");
+        window.location.href = "/auth";
+      } else {
+        alert("Failed to add comment. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleEdit = (comment) => {
-    setEditingComment(comment._id);
-    setEditText(comment.text);
   };
 
   const handleUpdate = async (commentId) => {
@@ -73,7 +105,15 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
       }
     } catch (error) {
       console.error("Error updating comment:", error);
-      alert("Failed to update comment. Please try again.");
+
+      if (error.response?.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        alert("Your session has expired. Please login again.");
+        window.location.href = "/auth";
+      } else {
+        alert("Failed to update comment. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -97,7 +137,15 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
       }
     } catch (error) {
       console.error("Error deleting comment:", error);
-      alert("Failed to delete comment. Please try again.");
+
+      if (error.response?.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        alert("Your session has expired. Please login again.");
+        window.location.href = "/auth";
+      } else {
+        alert("Failed to delete comment. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -139,12 +187,15 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
       </h3>
 
       {/* Comment Form */}
-      {user ? (
+      {isAuthenticated ? (
         <form onSubmit={handleSubmit} className="comment-section__form">
           <div className="comment-section__input-group">
             <img
-              src={user.avatar}
-              alt={user.username}
+              src={
+                user?.avatar ||
+                "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+              }
+              alt={user?.username || "User"}
               className="comment-section__avatar"
               onError={(e) => {
                 e.target.src =
@@ -246,7 +297,10 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
                   {isCommentOwner(comment) && (
                     <div className="comment__owner-actions">
                       <button
-                        onClick={() => handleEdit(comment)}
+                        onClick={() => {
+                          setEditingComment(comment._id);
+                          setEditText(comment.text);
+                        }}
                         className="comment__action-btn"
                         title="Edit comment"
                       >

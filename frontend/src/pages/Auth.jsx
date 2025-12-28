@@ -1,7 +1,7 @@
 // frontend/src/pages/Auth.jsx
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../context/AuthContext";
+import { authAPI } from "../services/api";
 import "./Auth.css";
 
 const Auth = () => {
@@ -15,7 +15,6 @@ const Auth = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { login, register } = useAuth();
 
   const handleChange = (e) => {
     setFormData({
@@ -31,11 +30,11 @@ const Auth = () => {
     setError("");
 
     try {
-      let result;
+      let response;
 
       if (isLogin) {
         // Login
-        result = await login(formData.email, formData.password);
+        response = await authAPI.login(formData.email, formData.password);
       } else {
         // Register
         if (formData.password !== formData.confirmPassword) {
@@ -48,26 +47,33 @@ const Auth = () => {
           throw new Error("Invalid email format");
         }
 
-        result = await register(
+        response = await authAPI.register(
           formData.username,
           formData.email,
           formData.password
         );
       }
 
-      if (result.success) {
-        console.log("✅ Auth successful, redirecting...");
+      const { token, ...userData } = response.data;
 
-        // Force a full page reload to ensure all components get fresh auth state
-        setTimeout(() => {
-          window.location.href = "/";
-        }, 100);
-      } else {
-        throw new Error(result.message || "Authentication failed");
-      }
+      // **CRITICAL: Store token and user in localStorage**
+      localStorage.setItem("token", token);
+      localStorage.setItem("user", JSON.stringify(userData));
+
+      console.log("✅ Auth successful:", {
+        token: token.substring(0, 20) + "...",
+        user: userData.username,
+      });
+
+      // Force page reload to ensure all components get fresh auth state
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 100);
     } catch (err) {
-      setError(err.message || "Something went wrong");
-      console.error("Auth error:", err);
+      console.error("❌ Auth error:", err);
+      setError(
+        err.response?.data?.message || err.message || "Something went wrong"
+      );
     } finally {
       setLoading(false);
     }
@@ -162,12 +168,6 @@ const Auth = () => {
               onClick={() => {
                 setIsLogin(!isLogin);
                 setError("");
-                setFormData({
-                  username: "",
-                  email: "",
-                  password: "",
-                  confirmPassword: "",
-                });
               }}
             >
               {isLogin ? "Sign Up" : "Sign In"}
