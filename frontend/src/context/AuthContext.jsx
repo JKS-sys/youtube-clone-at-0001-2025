@@ -1,3 +1,4 @@
+// frontend/src/context/AuthContext.jsx
 import React, {
   createContext,
   useState,
@@ -20,9 +21,8 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  // Load user from localStorage on initial load
+  // ✅ CRITICAL: Load user from localStorage on app start
   useEffect(() => {
     const loadUserFromStorage = () => {
       try {
@@ -32,22 +32,11 @@ export const AuthProvider = ({ children }) => {
         if (token && userData) {
           const parsedUser = JSON.parse(userData);
           setUser(parsedUser);
-
-          // Verify token is still valid by fetching profile
-          authAPI.getProfile().catch(() => {
-            // Token invalid, clear storage
-            localStorage.removeItem("token");
-            localStorage.removeItem("user");
-            localStorage.removeItem("userChannel");
-            setUser(null);
-          });
+          console.log("✅ User loaded from storage:", parsedUser.username);
         }
       } catch (err) {
-        console.error("Error loading user from storage:", err);
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        localStorage.removeItem("userChannel");
-        setUser(null);
+        console.error("❌ Error loading user from storage:", err);
+        logout(); // Clear corrupted data
       } finally {
         setLoading(false);
       }
@@ -56,47 +45,36 @@ export const AuthProvider = ({ children }) => {
     loadUserFromStorage();
   }, []);
 
-  // Listen for storage changes from other tabs
-  useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === "user") {
-        try {
-          const userData = localStorage.getItem("user");
-          if (userData) {
-            setUser(JSON.parse(userData));
-          } else {
-            setUser(null);
-          }
-        } catch (error) {
-          console.error("Error parsing user data:", error);
-          setUser(null);
-        }
-      }
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    return () => window.removeEventListener("storage", handleStorageChange);
+  // ✅ CRITICAL: Get the current token (used by API service)
+  const getToken = useCallback(() => {
+    return localStorage.getItem("token");
   }, []);
+
+  // ✅ Check if user is authenticated
+  const isAuthenticated = useCallback(() => {
+    const token = getToken();
+    return !!token && !!user;
+  }, [getToken, user]);
 
   const login = useCallback(async (email, password) => {
     try {
-      setError(null);
       const response = await authAPI.login(email, password);
 
       if (response.data) {
         const { token, ...userData } = response.data;
 
-        // Store in localStorage
+        // ✅ Save to localStorage
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(userData));
 
-        // Update state
+        // ✅ Update state
         setUser(userData);
 
+        console.log("✅ Login successful, token saved.");
         return { success: true, data: userData };
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Login failed");
+      console.error("❌ Login error:", err);
       return {
         success: false,
         error: err.response?.data?.message || "Login failed",
@@ -106,23 +84,19 @@ export const AuthProvider = ({ children }) => {
 
   const register = useCallback(async (username, email, password) => {
     try {
-      setError(null);
       const response = await authAPI.register(username, email, password);
 
       if (response.data) {
         const { token, ...userData } = response.data;
 
-        // Store in localStorage
         localStorage.setItem("token", token);
         localStorage.setItem("user", JSON.stringify(userData));
-
-        // Update state
         setUser(userData);
 
         return { success: true, data: userData };
       }
     } catch (err) {
-      setError(err.response?.data?.message || "Registration failed");
+      console.error("❌ Registration error:", err);
       return {
         success: false,
         error: err.response?.data?.message || "Registration failed",
@@ -131,48 +105,24 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
-    // Call API logout if needed
-    authAPI.logout();
-
-    // Clear state
-    setUser(null);
-    setError(null);
-
+    console.log("✅ Logging out...");
     // Clear localStorage
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    localStorage.removeItem("userChannel");
-
+    // Clear state
+    setUser(null);
     // Redirect to home
     window.location.href = "/";
-  }, []);
-
-  const updateUser = useCallback(
-    (userData) => {
-      setUser((prev) => ({ ...prev, ...userData }));
-      localStorage.setItem("user", JSON.stringify({ ...user, ...userData }));
-    },
-    [user]
-  );
-
-  const isAuthenticated = useCallback(() => {
-    return !!localStorage.getItem("token");
-  }, []);
-
-  const getToken = useCallback(() => {
-    return localStorage.getItem("token");
   }, []);
 
   const value = {
     user,
     loading,
-    error,
     login,
     register,
     logout,
-    updateUser,
     isAuthenticated,
-    getToken,
+    getToken, // ✅ Expose this function
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

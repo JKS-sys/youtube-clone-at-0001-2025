@@ -16,41 +16,38 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log("🔐 Login attempt for:", email);
-
     // Validation
     if (!email || !password) {
       return res.status(400).json({
+        success: false,
         message: "Email and password are required",
       });
     }
 
-    // Find user by email and include password
+    // Find user
     const user = await User.findOne({ email }).select("+password");
 
     if (!user) {
-      console.log("❌ User not found:", email);
       return res.status(401).json({
+        success: false,
         message: "Invalid email or password",
       });
     }
 
-    // ✅ Use the renamed method checkPassword
+    // Check password
     const isPasswordValid = await user.comparePassword(password);
 
     if (!isPasswordValid) {
-      console.log("❌ Invalid password for user:", email);
       return res.status(401).json({
+        success: false,
         message: "Invalid email or password",
       });
     }
-
-    console.log("✅ Login successful for:", user.username);
 
     // Generate token
     const token = generateToken(user._id);
 
-    // Prepare user data for response
+    // User data for response
     const userData = {
       _id: user._id,
       username: user.username,
@@ -62,40 +59,44 @@ router.post("/login", async (req, res) => {
     };
 
     res.json({
-      ...userData,
-      token,
+      success: true,
+      message: "Login successful",
+      token: token,
+      user: userData,
     });
   } catch (error) {
     console.error("❌ Login error:", error);
     res.status(500).json({
+      success: false,
       message: "Server error during login",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// ✅ Fixed Register Route
+// ✅ Register Route
 router.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    console.log("📝 Registration attempt for:", email);
-
     // Validation
     if (!username || !email || !password) {
       return res.status(400).json({
+        success: false,
         message: "All fields are required",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
+        success: false,
         message: "Password must be at least 6 characters",
       });
     }
 
     if (!email.includes("@")) {
       return res.status(400).json({
+        success: false,
         message: "Invalid email format",
       });
     }
@@ -107,6 +108,7 @@ router.post("/register", async (req, res) => {
 
     if (userExists) {
       return res.status(400).json({
+        success: false,
         message: "User already exists",
       });
     }
@@ -121,12 +123,10 @@ router.post("/register", async (req, res) => {
       )}&background=random`,
     });
 
-    console.log("✅ User created:", user.username);
-
     // Generate token
     const token = generateToken(user._id);
 
-    // Prepare user data for response
+    // User data for response
     const userData = {
       _id: user._id,
       username: user.username,
@@ -138,28 +138,34 @@ router.post("/register", async (req, res) => {
     };
 
     res.status(201).json({
-      ...userData,
-      token,
+      success: true,
+      message: "Registration successful",
+      token: token,
+      user: userData,
     });
   } catch (error) {
     console.error("❌ Registration error:", error);
     res.status(500).json({
+      success: false,
       message: "Server error during registration",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// Get user profile
+// ✅ Get user profile
 router.get("/me", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findById(req.user._id).populate("channels");
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    res.json({
+    const userData = {
       _id: user._id,
       username: user.username,
       email: user.email,
@@ -167,11 +173,89 @@ router.get("/me", protect, async (req, res) => {
       channels: user.channels,
       hasChannel: user.hasChannel,
       createdAt: user.createdAt,
+    };
+
+    res.json({
+      success: true,
+      user: userData,
     });
   } catch (error) {
-    console.error("Get profile error:", error);
-    res.status(500).json({ message: error.message });
+    console.error("❌ Get profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
+});
+
+// ✅ Update user profile
+router.put("/me", protect, async (req, res) => {
+  try {
+    const { username, email, avatar } = req.body;
+
+    // Check if username or email already taken
+    if (username && username !== req.user.username) {
+      const usernameExists = await User.findOne({ username });
+      if (usernameExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Username already taken",
+        });
+      }
+    }
+
+    if (email && email !== req.user.email) {
+      const emailExists = await User.findOne({ email });
+      if (emailExists) {
+        return res.status(400).json({
+          success: false,
+          message: "Email already taken",
+        });
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        username: username || req.user.username,
+        email: email || req.user.email,
+        avatar: avatar || req.user.avatar,
+      },
+      { new: true, runValidators: true }
+    );
+
+    const userData = {
+      _id: updatedUser._id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      avatar: updatedUser.avatar,
+      channels: updatedUser.channels,
+      hasChannel: updatedUser.hasChannel,
+      createdAt: updatedUser.createdAt,
+    };
+
+    res.json({
+      success: true,
+      message: "Profile updated successfully",
+      user: userData,
+    });
+  } catch (error) {
+    console.error("❌ Update profile error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// ✅ Logout Route
+router.post("/logout", protect, (req, res) => {
+  res.json({
+    success: true,
+    message: "Logged out successfully",
+  });
 });
 
 export default router;

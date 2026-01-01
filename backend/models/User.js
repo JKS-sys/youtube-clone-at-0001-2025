@@ -34,7 +34,6 @@ const userSchema = new mongoose.Schema(
         ref: "Channel",
       },
     ],
-    // This is a property stored in the database
     hasChannel: {
       type: Boolean,
       default: false,
@@ -70,7 +69,7 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   }
 };
 
-// Method to check if user has a channel (AVOIDS conflict with the property)
+// Method to check if user has a channel
 userSchema.methods.userHasChannel = function () {
   return this.channels && this.channels.length > 0;
 };

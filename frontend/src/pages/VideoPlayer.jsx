@@ -8,17 +8,21 @@ import {
   FaUserCircle,
   FaYoutube,
   FaExternalLinkAlt,
+  FaSpinner,
+  FaExclamationTriangle,
+  FaPlay,
 } from "react-icons/fa";
 import "./VideoPlayer.css";
 
 const VideoPlayer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const videoRef = useRef(null);
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [playerError, setPlayerError] = useState(false);
-  const [useIframe, setUseIframe] = useState(false);
+  const [showFallbackPlayer, setShowFallbackPlayer] = useState(false);
 
   useEffect(() => {
     const fetchVideo = async () => {
@@ -28,16 +32,16 @@ const VideoPlayer = () => {
         console.log("📡 Fetching video:", id);
 
         const response = await videoAPI.getVideo(id);
-        console.log("📦 Video data:", response.data);
+        console.log("📦 Video data received:", response.data);
 
-        if (!response.data) {
+        if (!response.data || !response.data.video) {
           throw new Error("Video not found");
         }
 
-        setVideo(response.data);
+        setVideo(response.data.video);
 
         // Check if video URL is valid
-        if (!response.data.videoUrl) {
+        if (!response.data.video.videoUrl) {
           setError("Video URL is missing");
           setPlayerError(true);
         }
@@ -52,43 +56,56 @@ const VideoPlayer = () => {
       }
     };
 
-    if (id) {
+    if (id && id !== "undefined" && id !== "null") {
       fetchVideo();
+    } else {
+      setError("Invalid video ID");
+      setLoading(false);
     }
   }, [id]);
 
-  // Get video embed URL
-  const getVideoEmbedUrl = (videoUrl) => {
-    if (!videoUrl) return "";
+  // Get safe video URL for different formats
+  const getSafeVideoUrl = (videoUrl) => {
+    if (!videoUrl) return null;
 
-    // YouTube URL conversion
-    if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
-      let videoId = "";
-
-      // Extract video ID from various formats
-      if (videoUrl.includes("youtube.com/watch?v=")) {
-        videoId = videoUrl.split("v=")[1]?.split("&")[0];
-      } else if (videoUrl.includes("youtu.be/")) {
-        videoId = videoUrl.split("youtu.be/")[1]?.split("?")[0];
-      } else if (videoUrl.includes("youtube.com/embed/")) {
-        videoId = videoUrl.split("embed/")[1]?.split("?")[0];
+    try {
+      // If it's already a valid URL, return it
+      if (videoUrl.startsWith("http://") || videoUrl.startsWith("https://")) {
+        return videoUrl;
       }
 
-      if (videoId) {
-        return `https://www.youtube.com/embed/${videoId}`;
+      // If it's a YouTube ID without embed format
+      if (videoUrl.length === 11 && !videoUrl.includes("/")) {
+        return `https://www.youtube.com/embed/${videoUrl}`;
       }
-    }
 
-    // For direct video files
-    if (
-      videoUrl.includes(".mp4") ||
-      videoUrl.includes(".webm") ||
-      videoUrl.includes(".ogg")
-    ) {
+      // Try to extract YouTube video ID from various formats
+      const youtubeIdPatterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/,
+      ];
+
+      for (const pattern of youtubeIdPatterns) {
+        const match = videoUrl.match(pattern);
+        if (match && match[1]) {
+          return `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1&autoplay=1`;
+        }
+      }
+
+      // If it looks like a direct video file
+      if (
+        videoUrl.includes(".mp4") ||
+        videoUrl.includes(".webm") ||
+        videoUrl.includes(".avi")
+      ) {
+        return videoUrl;
+      }
+
+      return videoUrl;
+    } catch (error) {
+      console.error("Error processing video URL:", error);
       return videoUrl;
     }
-
-    return videoUrl;
   };
 
   const handleVideoUpdate = (updatedData) => {
@@ -104,7 +121,7 @@ const VideoPlayer = () => {
       const response = await videoAPI.getVideo(id);
       setVideo((prev) => ({
         ...prev,
-        comments: response.data.comments,
+        comments: response.data.video.comments,
       }));
     } catch (err) {
       console.error("Error updating comments:", err);
@@ -140,6 +157,46 @@ const VideoPlayer = () => {
     }
   };
 
+  // Get channel ID safely
+  const getChannelId = () => {
+    if (!video) return null;
+
+    // Try multiple ways to get channel ID
+    if (video.channelId) {
+      if (typeof video.channelId === "object") {
+        return video.channelId._id;
+      }
+      return video.channelId;
+    }
+
+    if (
+      video.uploader &&
+      video.uploader.channels &&
+      video.uploader.channels[0]
+    ) {
+      return video.uploader.channels[0];
+    }
+
+    return null;
+  };
+
+  const handleViewChannel = () => {
+    const channelId = getChannelId();
+    if (channelId) {
+      navigate(`/channel/${channelId}`);
+    } else {
+      alert("Channel information not available");
+    }
+  };
+
+  const handleVideoError = () => {
+    console.log("Video player error, trying fallback...");
+    setShowFallbackPlayer(true);
+  };
+
+  const safeVideoUrl = video ? getSafeVideoUrl(video.videoUrl) : null;
+  const isYouTube = safeVideoUrl && safeVideoUrl.includes("youtube.com/embed");
+
   if (loading) {
     return (
       <div className="video-player-loading">
@@ -153,7 +210,7 @@ const VideoPlayer = () => {
     return (
       <div className="video-player-error">
         <div className="error-icon">
-          <FaYoutube size={50} color="#ff0000" />
+          <FaExclamationTriangle size={60} color="#ff9800" />
         </div>
         <h2>{error || "Video not found"}</h2>
         <p>The video you're looking for doesn't exist or cannot be loaded.</p>
@@ -163,9 +220,6 @@ const VideoPlayer = () => {
       </div>
     );
   }
-
-  const videoEmbedUrl = getVideoEmbedUrl(video.videoUrl);
-  const isYouTube = videoEmbedUrl.includes("youtube.com/embed");
 
   return (
     <div className="video-player-container">
@@ -177,82 +231,69 @@ const VideoPlayer = () => {
       {/* Video Player */}
       <div className="video-player-wrapper">
         <div className="video-player">
-          {playerError ? (
+          {playerError || !safeVideoUrl ? (
             <div className="video-player-error-state">
-              <FaYoutube size={50} color="#ff0000" />
-              <p>Unable to play video. Trying fallback player...</p>
-              <button
-                onClick={() => setUseIframe(true)}
-                style={{
-                  padding: "10px 20px",
-                  background: "#065fd4",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                  marginTop: "10px",
-                }}
-              >
-                Use Simple Player
-              </button>
+              <FaYoutube size={50} color="#FF0000" />
+              <p>
+                Unable to play video. The video may be private or unavailable.
+              </p>
+              <div className="video-url">
+                {video.videoUrl
+                  ? `Original URL: ${video.videoUrl.substring(0, 50)}...`
+                  : "No video URL available"}
+              </div>
             </div>
           ) : (
             <>
-              {useIframe ? (
-                // Simple iframe player as fallback
-                <iframe
-                  src={videoEmbedUrl}
-                  title={video.title}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    backgroundColor: "#000",
-                  }}
-                  onError={() => setPlayerError(true)}
-                />
-              ) : (
-                // Try to use HTML5 video player first
-                <video
-                  controls
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    backgroundColor: "#000",
-                  }}
-                  onError={() => {
-                    console.log("❌ HTML5 video failed, trying iframe...");
-                    setUseIframe(true);
-                  }}
-                >
-                  {videoEmbedUrl && (
-                    <source src={videoEmbedUrl} type="video/mp4" />
+              {showFallbackPlayer || !isYouTube ? (
+                // Fallback HTML5 video player
+                <div className="fallback-player">
+                  <div className="player-header">
+                    <FaPlay /> Playing: {video.title}
+                  </div>
+                  <div className="video-notice">
+                    <p>
+                      Video preview not available. Please visit the original
+                      source:
+                    </p>
+                    <a
+                      href={video.videoUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="external-link-btn"
+                    >
+                      <FaExternalLinkAlt /> Watch on YouTube
+                    </a>
+                  </div>
+                  {video.thumbnailUrl && (
+                    <img
+                      src={video.thumbnailUrl}
+                      alt={video.title}
+                      className="video-thumbnail-large"
+                      onError={(e) => {
+                        e.target.src =
+                          "https://via.placeholder.com/800x450?text=No+Thumbnail";
+                      }}
+                    />
                   )}
-                  Your browser does not support the video tag.
-                </video>
+                </div>
+              ) : (
+                // YouTube embed iframe
+                <div className="youtube-embed-container">
+                  <iframe
+                    src={safeVideoUrl}
+                    title={video.title}
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    onError={handleVideoError}
+                  />
+                </div>
               )}
             </>
           )}
         </div>
-      </div>
-
-      {/* Debug Info - Remove in production */}
-      <div
-        style={{
-          padding: "10px",
-          margin: "10px 0",
-          background: "#f0f0f0",
-          borderRadius: "5px",
-          fontSize: "12px",
-          fontFamily: "monospace",
-        }}
-      >
-        <strong>Video Debug:</strong> ID: {video._id} | URL:{" "}
-        {video.videoUrl ? video.videoUrl.substring(0, 50) + "..." : "Missing"} |
-        Embed URL: {videoEmbedUrl ? "Yes" : "No"} | Is YouTube:{" "}
-        {isYouTube ? "Yes" : "No"}
       </div>
 
       {/* Video Info */}
@@ -262,13 +303,14 @@ const VideoPlayer = () => {
         <div className="video-stats">
           <span className="views-count">{formatViews(video.views)}</span>
           <span className="upload-date">{formatDate(video.createdAt)}</span>
+          <span className="video-category">{video.category}</span>
         </div>
 
         {/* Like/Dislike Buttons */}
         <LikeDislikeButtons
           videoId={video._id}
-          initialLikes={video.likes}
-          initialDislikes={video.dislikes}
+          initialLikes={video.likes || []}
+          initialDislikes={video.dislikes || []}
           onUpdate={handleVideoUpdate}
         />
 
@@ -279,9 +321,14 @@ const VideoPlayer = () => {
               src={
                 video.uploader?.avatar ||
                 video.channelId?.owner?.avatar ||
+                video.channelId?.channelAvatar ||
                 "https://cdn-icons-png.flaticon.com/512/149/149071.png"
               }
-              alt={video.uploader?.username || video.channelId?.channelName}
+              alt={
+                video.uploader?.username ||
+                video.channelId?.channelName ||
+                "Channel"
+              }
               onError={(e) => {
                 e.target.src =
                   "https://cdn-icons-png.flaticon.com/512/149/149071.png";
@@ -299,18 +346,7 @@ const VideoPlayer = () => {
                 {video.channelId.description}
               </p>
             )}
-            <button
-              onClick={() => {
-                if (video.channelId) {
-                  navigate(
-                    `/channel/${video.channelId._id || video.channelId}`
-                  );
-                } else {
-                  alert("Channel information not available");
-                }
-              }}
-              className="view-channel-btn"
-            >
+            <button onClick={handleViewChannel} className="view-channel-btn">
               View Channel
             </button>
           </div>
@@ -338,6 +374,32 @@ const VideoPlayer = () => {
         initialComments={video.comments || []}
         onUpdate={handleCommentsUpdate}
       />
+
+      {/* Debug Info (Only in development) */}
+      {import.meta.env.DEV && (
+        <div className="debug-info">
+          <details>
+            <summary>Debug Information</summary>
+            <pre>
+              {JSON.stringify(
+                {
+                  videoId: video._id,
+                  hasVideoUrl: !!video.videoUrl,
+                  videoUrl: video.videoUrl,
+                  safeVideoUrl: safeVideoUrl,
+                  isYouTube: isYouTube,
+                  showFallbackPlayer: showFallbackPlayer,
+                  channelId: getChannelId(),
+                  channelInfo: video.channelId,
+                  uploader: video.uploader,
+                },
+                null,
+                2
+              )}
+            </pre>
+          </details>
+        </div>
+      )}
     </div>
   );
 };

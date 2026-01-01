@@ -8,9 +8,10 @@ import {
   FaPlayCircle,
   FaThumbsUp,
   FaFolder,
-  FaPlusCircle,
+  FaCog,
   FaChevronLeft,
   FaChevronRight,
+  FaUserCircle,
 } from "react-icons/fa";
 import "./Sidebar.css";
 
@@ -21,6 +22,7 @@ const Sidebar = ({
   onCloseMobileMenu,
 }) => {
   const [isMobile, setIsMobile] = useState(false);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     const checkIfMobile = () => {
@@ -29,6 +31,21 @@ const Sidebar = ({
 
     checkIfMobile();
     window.addEventListener("resize", checkIfMobile);
+
+    // Load user from localStorage
+    const loadUser = () => {
+      try {
+        const userData = localStorage.getItem("user");
+        if (userData && userData !== "undefined") {
+          setUser(JSON.parse(userData));
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+        setUser(null);
+      }
+    };
+
+    loadUser();
 
     // Listen for toggle events from header
     const handleToggleEvent = () => {
@@ -43,7 +60,7 @@ const Sidebar = ({
     };
   }, [onToggleCollapse]);
 
-  const sidebarItems = [
+  const baseSidebarItems = [
     { icon: <FaHome />, label: "Home", path: "/" },
     { icon: <FaFire />, label: "Trending", path: "/trending" },
     { icon: <FaYoutube />, label: "Subscriptions", path: "/subscriptions" },
@@ -51,11 +68,14 @@ const Sidebar = ({
     { icon: <FaHistory />, label: "History", path: "/history" },
     { icon: <FaPlayCircle />, label: "Your videos", path: "/your-videos" },
     { icon: <FaThumbsUp />, label: "Liked videos", path: "/liked-videos" },
-    {
-      icon: <FaPlusCircle />,
-      label: "Create Channel",
-      path: "/create-channel",
-    },
+  ];
+
+  // Add Manage Channel only if user is logged in
+  const sidebarItems = [
+    ...baseSidebarItems,
+    ...(user
+      ? [{ icon: <FaCog />, label: "Manage Channel", path: "/manage-channel" }]
+      : []),
   ];
 
   const categories = [
@@ -131,6 +151,15 @@ const Sidebar = ({
 
             <div className="sidebar__footer">
               <p>YouTube Clone © 2024</p>
+              {user ? (
+                <p className="sidebar__user">
+                  <FaUserCircle /> {user.username}
+                </p>
+              ) : (
+                <p className="sidebar__login-prompt">
+                  <a href="/auth">Sign in</a> to manage your channel
+                </p>
+              )}
             </div>
           </>
         )}
