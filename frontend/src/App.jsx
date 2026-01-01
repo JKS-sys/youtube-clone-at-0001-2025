@@ -15,6 +15,7 @@ import CreateChannel from "./pages/CreateChannel";
 import Auth from "./pages/Auth";
 import Placeholder from "./pages/Placeholder";
 import ErrorBoundary from "./components/ErrorBoundary";
+import ManageChannel from "./pages/ManageChannel";
 import { testAPI } from "./services/api";
 import "./App.css";
 
@@ -22,11 +23,13 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [apiStatus, setApiStatus] = useState("checking");
+  const [apiUrl, setApiUrl] = useState("");
 
   useEffect(() => {
     // Test API connection on app start
     const checkAPI = async () => {
       try {
+        console.log("🔗 Testing API connection...");
         const isConnected = await testAPI();
         setApiStatus(isConnected ? "connected" : "disconnected");
 
@@ -36,12 +39,21 @@ function App() {
           );
         }
       } catch (error) {
-        setApiStatus("error");
         console.error("❌ API check failed:", error);
+        setApiStatus("error");
       }
     };
 
+    // Get API URL from environment
+    const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+    setApiUrl(apiUrl);
+    console.log(`🌐 Using API URL: ${apiUrl}`);
+
     checkAPI();
+
+    // Check API connection every 30 seconds
+    const interval = setInterval(checkAPI, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleMenuClick = () => {
@@ -61,7 +73,7 @@ function App() {
 
   return (
     <AuthProvider>
-      <Router>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <div className="app">
           <Header onMenuClick={handleMenuClick} />
           <div className="app__body">
@@ -72,18 +84,19 @@ function App() {
               onCloseMobileMenu={closeMobileMenu}
             />
             <div className="app__content">
-              {showApiWarning && (
-                <div className="api-warning">
-                  <p>
-                    ⚠️ Backend connection: {apiStatus}.
-                    {apiStatus === "checking" && " Checking..."}
-                    {apiStatus === "disconnected" &&
-                      " Please ensure backend server is running on port 5001"}
-                    {apiStatus === "error" &&
-                      " Connection error. Check console for details."}
-                  </p>
-                </div>
-              )}
+              {/* Demo Notice */}
+              <div className="demo-notice">
+                <p>
+                  🚀 <strong>YouTube Clone Demo</strong> | This is a fully
+                  functional YouTube clone with real features.
+                  {showApiWarning && (
+                    <span style={{ color: "#ff0000", marginLeft: "10px" }}>
+                      ⚠️ Backend: {apiStatus} | Using API: {apiUrl}
+                    </span>
+                  )}
+                </p>
+              </div>
+
               <ErrorBoundary>
                 <Routes>
                   <Route path="/" element={<Home />} />
@@ -115,9 +128,34 @@ function App() {
                     path="/liked-videos"
                     element={<Placeholder pageName="Liked Videos" />}
                   />
+                  <Route path="/manage-channel" element={<ManageChannel />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </ErrorBoundary>
+
+              {/* Footer */}
+              <footer className="app-footer">
+                <p>
+                  © 2024 YouTube Clone. Built with React, Node.js, and MongoDB.
+                </p>
+                <p className="footer-links">
+                  <a
+                    href="https://github.com/yourusername/youtube-clone"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    GitHub
+                  </a>
+                  <span> • </span>
+                  <a href="/api" target="_blank">
+                    API Documentation
+                  </a>
+                  <span> • </span>
+                  <a href="/api/health" target="_blank">
+                    API Health
+                  </a>
+                </p>
+              </footer>
             </div>
           </div>
         </div>

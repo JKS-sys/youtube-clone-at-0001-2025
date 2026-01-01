@@ -1,4 +1,3 @@
-// frontend/src/components/CommentSection.jsx
 import React, { useState, useEffect } from "react";
 import {
   FaUserCircle,
@@ -6,6 +5,12 @@ import {
   FaTrash,
   FaCheck,
   FaTimes,
+  FaSpinner,
+  FaReply,
+  FaThumbsUp,
+  FaThumbsDown,
+  FaEllipsisH,
+  FaComments,
 } from "react-icons/fa";
 import { videoAPI } from "../services/api";
 import "./CommentSection.css";
@@ -15,354 +20,539 @@ const CommentSection = ({ videoId, initialComments = [], onUpdate }) => {
   const [newComment, setNewComment] = useState("");
   const [editingComment, setEditingComment] = useState(null);
   const [editText, setEditText] = useState("");
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [user, setUser] = useState(null);
 
-  // Get current user from localStorage
-  const getCurrentUser = () => {
-    try {
-      const userData = localStorage.getItem("user");
-      return userData ? JSON.parse(userData) : null;
-    } catch (error) {
-      console.error("Error getting user:", error);
-      return null;
-    }
-  };
-
-  const user = getCurrentUser();
-  const isAuthenticated = !!localStorage.getItem("token");
+  // Get current user
+  useEffect(() => {
+    const getUser = () => {
+      try {
+        const userData = localStorage.getItem("user");
+        return userData ? JSON.parse(userData) : null;
+      } catch (error) {
+        console.error("Error getting user:", error);
+        return null;
+      }
+    };
+    setUser(getUser());
+  }, []);
 
   useEffect(() => {
     setComments(initialComments);
   }, [initialComments]);
 
+  // Handle add comment
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Check authentication
-    if (!isAuthenticated || !user) {
-      alert("Please login to add a comment");
-      window.location.href = "/auth";
+    if (!user) {
+      setError("Please login to add a comment");
+      setTimeout(() => {
+        window.location.href = "/auth";
+      }, 1500);
       return;
     }
 
-    if (!newComment.trim()) return;
+    if (!newComment.trim()) {
+      setError("Comment cannot be empty");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
 
     try {
       setLoading(true);
-      console.log("💬 Submitting comment for video:", videoId);
+      setError("");
 
       const response = await videoAPI.addComment(videoId, newComment);
 
-      // Add the new comment to the list
-      setComments((prev) => [...prev, response.data]);
-      setNewComment("");
+      if (response.data && response.data.comment) {
+        const newCommentData = response.data.comment;
+        setComments((prev) => [newCommentData, ...prev]);
+        setNewComment("");
+        setSuccess("Comment added successfully!");
 
-      if (onUpdate) {
-        onUpdate();
+        if (onUpdate) {
+          onUpdate();
+        }
       }
-
-      console.log("✅ Comment added successfully");
-    } catch (error) {
-      console.error("❌ Error adding comment:", error);
-
-      if (error.response?.status === 401) {
-        // Token is invalid
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        alert("Your session has expired. Please login again.");
-        window.location.href = "/auth";
-      } else if (error.message === "No authentication token") {
-        // No token at all
-        alert("Please login to add a comment");
-        window.location.href = "/auth";
-      } else {
-        alert("Failed to add comment. Please try again.");
-      }
+    } catch (err) {
+      console.error("❌ Error adding comment:", err);
+      handleApiError(err, "Failed to add comment");
     } finally {
       setLoading(false);
+      setTimeout(() => setSuccess(""), 3000);
     }
   };
 
+  // Handle update comment
   const handleUpdate = async (commentId) => {
-    if (!editText.trim()) return;
+    if (!editText.trim()) {
+      setError("Comment cannot be empty");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
 
     try {
       setLoading(true);
-      await videoAPI.updateComment(videoId, commentId, editText);
+      setError("");
 
-      // Update the comment in the list
-      setComments((prev) =>
-        prev.map((comment) =>
-          comment._id === commentId ? { ...comment, text: editText } : comment
-        )
+      const response = await videoAPI.updateComment(
+        videoId,
+        commentId,
+        editText
       );
 
-      setEditingComment(null);
-      setEditText("");
+      if (response.data && response.data.comment) {
+        setComments((prev) =>
+          prev.map((comment) =>
+            comment._id === commentId ? response.data.comment : comment
+          )
+        );
+        setEditingComment(null);
+        setEditText("");
+        setSuccess("Comment updated successfully!");
 
-      if (onUpdate) {
-        onUpdate();
+        if (onUpdate) {
+          onUpdate();
+        }
       }
-    } catch (error) {
-      console.error("Error updating comment:", error);
-
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        alert("Your session has expired. Please login again.");
-        window.location.href = "/auth";
-      } else {
-        alert("Failed to update comment. Please try again.");
-      }
+    } catch (err) {
+      console.error("❌ Error updating comment:", err);
+      handleApiError(err, "Failed to update comment");
     } finally {
       setLoading(false);
+      setTimeout(() => setSuccess(""), 3000);
     }
   };
 
+  // Handle delete comment
   const handleDelete = async (commentId) => {
     if (!window.confirm("Are you sure you want to delete this comment?"))
       return;
 
     try {
       setLoading(true);
+      setError("");
+
       await videoAPI.deleteComment(videoId, commentId);
 
-      // Remove the comment from the list
       setComments((prev) =>
         prev.filter((comment) => comment._id !== commentId)
       );
+      setSuccess("Comment deleted successfully!");
 
       if (onUpdate) {
         onUpdate();
       }
-    } catch (error) {
-      console.error("Error deleting comment:", error);
-
-      if (error.response?.status === 401) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-        alert("Your session has expired. Please login again.");
-        window.location.href = "/auth";
-      } else {
-        alert("Failed to delete comment. Please try again.");
-      }
+    } catch (err) {
+      console.error("❌ Error deleting comment:", err);
+      handleApiError(err, "Failed to delete comment");
     } finally {
       setLoading(false);
+      setTimeout(() => setSuccess(""), 3000);
     }
   };
 
-  const handleCancelEdit = () => {
-    setEditingComment(null);
-    setEditText("");
-  };
-
-  const handleAddComment = async (e) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
+  // Handle reply to comment
+  const handleReplySubmit = async (parentCommentId) => {
+    if (!replyText.trim()) {
+      setError("Reply cannot be empty");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
 
     try {
-      const response = await videoAPI.addComment(videoId, newComment);
-      setComments([...comments, response.data]);
-      setNewComment("");
-      if (onUpdate) onUpdate();
-    } catch (error) {
-      console.error("Error adding comment:", error);
-      alert("Failed to add comment");
-    }
-  };
+      setLoading(true);
+      setError("");
 
-  const handleEditComment = async (commentId, newText) => {
-    try {
-      await videoAPI.updateComment(videoId, commentId, newText);
-      setComments(
-        comments.map((comment) =>
-          comment._id === commentId ? { ...comment, text: newText } : comment
-        )
-      );
-      if (onUpdate) onUpdate();
-    } catch (error) {
-      console.error("Error editing comment:", error);
-      alert("Failed to edit comment");
-    }
-  };
+      // Note: This assumes your backend supports replies
+      // If not, you'll need to implement a reply system
+      const response = await videoAPI.addComment(videoId, replyText);
 
-  const handleDeleteComment = async (commentId) => {
-    if (window.confirm("Delete this comment?")) {
-      try {
-        await videoAPI.deleteComment(videoId, commentId);
-        setComments(comments.filter((comment) => comment._id !== commentId));
-        if (onUpdate) onUpdate();
-      } catch (error) {
-        console.error("Error deleting comment:", error);
-        alert("Failed to delete comment");
+      if (response.data && response.data.comment) {
+        // Here you would typically add the reply to the parent comment
+        // For now, we'll just add it as a regular comment
+        const newReply = response.data.comment;
+        setComments((prev) => [newReply, ...prev]);
+        setReplyingTo(null);
+        setReplyText("");
+        setSuccess("Reply added successfully!");
+
+        if (onUpdate) {
+          onUpdate();
+        }
       }
+    } catch (err) {
+      console.error("❌ Error adding reply:", err);
+      handleApiError(err, "Failed to add reply");
+    } finally {
+      setLoading(false);
+      setTimeout(() => setSuccess(""), 3000);
     }
   };
 
-  const isCommentOwner = (comment) => {
-    return user && comment.userId && comment.userId._id === user._id;
+  // Handle API errors
+  const handleApiError = (err, defaultMessage) => {
+    if (err.response?.status === 401) {
+      setError("Your session has expired. Please login again.");
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setTimeout(() => {
+        window.location.href = "/auth";
+      }, 2000);
+    } else if (err.response?.status === 403) {
+      setError("You are not authorized to perform this action");
+    } else {
+      setError(err.response?.data?.message || defaultMessage);
+    }
+    setTimeout(() => setError(""), 3000);
   };
 
+  // Check if user owns the comment
+  const isCommentOwner = (comment) => {
+    if (!user || !comment) return false;
+
+    const commentUserId = comment.userId?._id || comment.userId;
+    const currentUserId = user._id;
+
+    return (
+      commentUserId &&
+      currentUserId &&
+      commentUserId.toString() === currentUserId.toString()
+    );
+  };
+
+  // Format date
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+    if (!dateString) return "just now";
 
-    if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
 
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
+      if (diffMins < 1) return "just now";
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffHours < 24) return `${diffHours}h ago`;
+      if (diffDays < 7) return `${diffDays}d ago`;
+
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    } catch (error) {
+      return "recently";
+    }
+  };
+
+  // Get user avatar
+  const getUserAvatar = (comment) => {
+    if (comment.userId?.avatar) {
+      return comment.userId.avatar;
+    }
+    if (user?.avatar) {
+      return user.avatar;
+    }
+    return "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+  };
+
+  // Get username
+  const getUsername = (comment) => {
+    if (comment.userId?.username) {
+      return comment.userId.username;
+    }
+    if (user?.username) {
+      return user.username;
+    }
+    return "Anonymous";
   };
 
   return (
     <div className="comment-section">
-      <h3 className="comment-section__title">
-        {comments.length} Comment{comments.length !== 1 ? "s" : ""}
-      </h3>
+      {/* Header */}
+      <div className="comment-section__header">
+        <h3 className="comment-section__title">
+          {comments.length} Comment{comments.length !== 1 ? "s" : ""}
+        </h3>
+        <div className="comment-section__sort">
+          <select className="sort-select">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="popular">Most popular</option>
+          </select>
+        </div>
+      </div>
 
-      {/* Comment Form */}
-      {isAuthenticated ? (
-        <form onSubmit={handleSubmit} className="comment-section__form">
-          <div className="comment-section__input-group">
-            <img
-              src={
-                user?.avatar ||
-                "https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              }
-              alt={user?.username || "User"}
-              className="comment-section__avatar"
-              onError={(e) => {
-                e.target.src =
-                  "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-              }}
-            />
-            <div className="comment-section__input-wrapper">
-              <input
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add a comment..."
-                className="comment-section__input"
-                disabled={loading}
-              />
-              <div className="comment-section__actions">
-                <button
-                  type="button"
-                  className="comment-section__cancel-btn"
-                  onClick={() => setNewComment("")}
-                  disabled={!newComment || loading}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="comment-section__submit-btn"
-                  disabled={!newComment.trim() || loading}
-                >
-                  {loading ? "Posting..." : "Comment"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </form>
-      ) : (
-        <div className="comment-section__login-prompt">
-          <p>
-            Please <a href="/auth">log in</a> to leave a comment.
-          </p>
+      {/* Messages */}
+      {error && (
+        <div className="comment-section__error">
+          <span className="error-text">{error}</span>
+        </div>
+      )}
+      {success && (
+        <div className="comment-section__success">
+          <span className="success-text">{success}</span>
         </div>
       )}
 
+      {/* Comment Form */}
+      <form onSubmit={handleSubmit} className="comment-section__form">
+        <div className="comment-section__input-group">
+          <img
+            src={
+              user?.avatar ||
+              "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+            }
+            alt={user?.username || "User"}
+            className="comment-section__avatar"
+            onError={(e) => {
+              e.target.src =
+                "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+            }}
+          />
+          <div className="comment-section__input-wrapper">
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add a comment..."
+              className="comment-section__input"
+              disabled={loading || !user}
+            />
+            {!user && (
+              <div className="login-prompt-small">
+                Please <a href="/auth">login</a> to comment
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="comment-section__actions">
+          <button
+            type="button"
+            className="comment-section__cancel-btn"
+            onClick={() => setNewComment("")}
+            disabled={!newComment || loading}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="comment-section__submit-btn"
+            disabled={!newComment.trim() || loading || !user}
+          >
+            {loading ? (
+              <>
+                <FaSpinner className="spinner" /> Posting...
+              </>
+            ) : (
+              "Comment"
+            )}
+          </button>
+        </div>
+      </form>
+
       {/* Comments List */}
       <div className="comment-section__list">
-        {comments.map((comment) => (
-          <div key={comment._id || comment.commentId} className="comment">
-            <img
-              src={
-                comment.userId?.avatar ||
-                "https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              }
-              alt={comment.userId?.username || "User"}
-              className="comment__avatar"
-              onError={(e) => {
-                e.target.src =
-                  "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-              }}
-            />
-            <div className="comment__content">
-              <div className="comment__header">
-                <span className="comment__author">
-                  {comment.userId?.username || "Anonymous"}
-                </span>
-                <span className="comment__date">
-                  {formatDate(comment.createdAt || comment.timestamp)}
-                </span>
-              </div>
+        {comments.length === 0 ? (
+          <div className="no-comments">
+            <FaComments size={40} color="#ccc" />
+            <p>No comments yet. Be the first to comment!</p>
+          </div>
+        ) : (
+          comments.map((comment) => {
+            const commentId = comment._id;
+            const isEditing = editingComment === commentId;
+            const isReplying = replyingTo === commentId;
+            const isOwner = isCommentOwner(comment);
 
-              {editingComment === comment._id ? (
-                <div className="comment__edit-form">
-                  <textarea
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    className="comment__edit-input"
-                    rows="3"
-                  />
-                  <div className="comment__edit-actions">
-                    <button
-                      onClick={() => handleUpdate(comment._id)}
-                      className="comment__save-btn"
-                      disabled={!editText.trim() || loading}
-                    >
-                      <FaCheck /> Save
-                    </button>
-                    <button
-                      onClick={handleCancelEdit}
-                      className="comment__cancel-btn"
-                      disabled={loading}
-                    >
-                      <FaTimes /> Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <p className="comment__text">{comment.text}</p>
+            return (
+              <div key={commentId} className="comment">
+                {/* Comment Avatar */}
+                <img
+                  src={getUserAvatar(comment)}
+                  alt={getUsername(comment)}
+                  className="comment__avatar"
+                  onError={(e) => {
+                    e.target.src =
+                      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                  }}
+                />
 
-                  {isCommentOwner(comment) && (
-                    <div className="comment__owner-actions">
+                {/* Comment Content */}
+                <div className="comment__content">
+                  {/* Comment Header */}
+                  <div className="comment__header">
+                    <div className="comment__author-info">
+                      <span className="comment__author">
+                        {getUsername(comment)}
+                      </span>
+                      <span className="comment__date">
+                        {formatDate(comment.createdAt || comment.timestamp)}
+                      </span>
+                    </div>
+                    <div className="comment__actions">
+                      {isOwner && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingComment(commentId);
+                              setEditText(comment.text);
+                            }}
+                            className="comment__action-btn"
+                            title="Edit comment"
+                            disabled={loading}
+                          >
+                            <FaEdit />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(commentId)}
+                            className="comment__action-btn delete"
+                            title="Delete comment"
+                            disabled={loading}
+                          >
+                            <FaTrash />
+                          </button>
+                        </>
+                      )}
                       <button
-                        onClick={() => {
-                          setEditingComment(comment._id);
-                          setEditText(comment.text);
-                        }}
+                        onClick={() =>
+                          setReplyingTo(isReplying ? null : commentId)
+                        }
                         className="comment__action-btn"
-                        title="Edit comment"
+                        title="Reply to comment"
+                        disabled={loading || !user}
                       >
-                        <FaEdit /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(comment._id)}
-                        className="comment__action-btn comment__action-btn--delete"
-                        title="Delete comment"
-                      >
-                        <FaTrash /> Delete
+                        <FaReply />
                       </button>
                     </div>
+                  </div>
+
+                  {/* Comment Body */}
+                  {isEditing ? (
+                    <div className="comment__edit-form">
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        className="comment__edit-input"
+                        rows="3"
+                      />
+                      <div className="comment__edit-actions">
+                        <button
+                          onClick={() => handleUpdate(commentId)}
+                          className="comment__save-btn"
+                          disabled={!editText.trim() || loading}
+                        >
+                          <FaCheck /> Save
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingComment(null);
+                            setEditText("");
+                          }}
+                          className="comment__cancel-btn"
+                          disabled={loading}
+                        >
+                          <FaTimes /> Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="comment__text">{comment.text}</p>
+
+                      {/* Comment Reactions */}
+                      <div className="comment__reactions">
+                        <button
+                          className="reaction-btn like"
+                          title="Like comment"
+                        >
+                          <FaThumbsUp /> 0
+                        </button>
+                        <button
+                          className="reaction-btn dislike"
+                          title="Dislike comment"
+                        >
+                          <FaThumbsDown /> 0
+                        </button>
+                        <button
+                          className="reaction-btn reply"
+                          onClick={() =>
+                            setReplyingTo(isReplying ? null : commentId)
+                          }
+                        >
+                          Reply
+                        </button>
+                      </div>
+
+                      {/* Reply Form */}
+                      {isReplying && user && (
+                        <div className="comment__reply-form">
+                          <div className="reply-input-group">
+                            <img
+                              src={
+                                user.avatar ||
+                                "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                              }
+                              alt={user.username}
+                              className="reply-avatar"
+                            />
+                            <div className="reply-input-wrapper">
+                              <input
+                                type="text"
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                placeholder={`Replying to ${getUsername(
+                                  comment
+                                )}...`}
+                                className="reply-input"
+                                disabled={loading}
+                              />
+                            </div>
+                          </div>
+                          <div className="reply-actions">
+                            <button
+                              type="button"
+                              className="reply-cancel-btn"
+                              onClick={() => {
+                                setReplyingTo(null);
+                                setReplyText("");
+                              }}
+                              disabled={loading}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="reply-submit-btn"
+                              onClick={() => handleReplySubmit(commentId)}
+                              disabled={!replyText.trim() || loading}
+                            >
+                              {loading ? (
+                                <>
+                                  <FaSpinner className="spinner" /> Posting...
+                                </>
+                              ) : (
+                                "Reply"
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
-                </>
-              )}
-            </div>
-          </div>
-        ))}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

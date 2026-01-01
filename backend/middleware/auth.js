@@ -1,4 +1,3 @@
-// backend/middleware/auth.js
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 
@@ -6,7 +5,7 @@ export const protect = async (req, res, next) => {
   try {
     let token;
 
-    // Get token from header
+    // Check for token in header
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith("Bearer")
@@ -14,9 +13,14 @@ export const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
     }
 
-    // Check if token exists
+    // Check for token in cookies (if using cookies)
+    else if (req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
     if (!token) {
       return res.status(401).json({
+        success: false,
         message: "Not authorized, no token provided",
       });
     }
@@ -29,30 +33,46 @@ export const protect = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({
+        success: false,
         message: "User not found",
       });
     }
 
-    // Attach user to request object
+    // Attach user to request
     req.user = user;
     next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
+    console.error("❌ Auth middleware error:", error);
 
     if (error.name === "JsonWebTokenError") {
       return res.status(401).json({
+        success: false,
         message: "Invalid token",
       });
     }
 
     if (error.name === "TokenExpiredError") {
       return res.status(401).json({
+        success: false,
         message: "Token expired",
       });
     }
 
     return res.status(401).json({
-      message: "Not authorized, authentication failed",
+      success: false,
+      message: "Not authorized",
+    });
+  }
+};
+
+// Optional: Admin middleware
+export const admin = (req, res, next) => {
+  if (req.user && req.user.isAdmin) {
+    next();
+  } else {
+    res.status(401).json({
+      success: false,
+      message: "Not authorized as admin",
     });
   }
 };

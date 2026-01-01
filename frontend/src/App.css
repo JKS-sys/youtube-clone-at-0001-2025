@@ -80,3 +80,53 @@ body {
 .api-warning p {
   margin: 0;
 }
+
+/* App-wide styles */
+.demo-notice {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 10px 20px;
+  margin: 10px 20px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 14px;
+  animation: slideIn 0.5s ease-out;
+}
+
+.demo-notice p {
+  margin: 0;
+}
+
+.app-footer {
+  margin-top: 40px;
+  padding: 20px;
+  text-align: center;
+  color: #606060;
+  border-top: 1px solid #e0e0e0;
+  font-size: 14px;
+}
+
+.app-footer .footer-links {
+  margin-top: 10px;
+}
+
+.app-footer .footer-links a {
+  color: #065fd4;
+  text-decoration: none;
+  margin: 0 5px;
+}
+
+.app-footer .footer-links a:hover {
+  text-decoration: underline;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

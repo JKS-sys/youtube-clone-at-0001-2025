@@ -6,10 +6,12 @@ const videoSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      maxlength: 100,
     },
     description: {
       type: String,
       default: "",
+      maxlength: 1000,
     },
     videoUrl: {
       type: String,
@@ -47,7 +49,6 @@ const videoSchema = new mongoose.Schema(
     ],
     category: {
       type: String,
-      required: true,
       enum: [
         "Music",
         "Sports",
@@ -57,8 +58,18 @@ const videoSchema = new mongoose.Schema(
         "Technology",
         "Other",
       ],
+      default: "Education",
     },
-    tags: [String],
+    tags: [
+      {
+        type: String,
+        trim: true,
+      },
+    ],
+    duration: {
+      type: String,
+      default: "0:00",
+    },
     comments: [
       {
         userId: {
@@ -69,6 +80,7 @@ const videoSchema = new mongoose.Schema(
         text: {
           type: String,
           required: true,
+          maxlength: 1000,
         },
         createdAt: {
           type: Date,
@@ -76,10 +88,33 @@ const videoSchema = new mongoose.Schema(
         },
       },
     ],
+    isPublished: {
+      type: Boolean,
+      default: true,
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now,
+    },
   },
   {
     timestamps: true,
   }
 );
+
+// Update timestamps
+videoSchema.pre("save", function (next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+// Indexes
+videoSchema.index({ channelId: 1 });
+videoSchema.index({ uploader: 1 });
+videoSchema.index({ title: "text", description: "text", tags: "text" });
 
 export default mongoose.model("Video", videoSchema);

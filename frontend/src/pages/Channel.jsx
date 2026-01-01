@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { channelAPI, videoAPI } from "../services/api";
 import { useAuth } from "../context/AuthContext";
 import VideoCard from "../components/VideoCard";
@@ -17,13 +17,15 @@ import {
   FaCog,
   FaBell,
   FaShare,
-  FaEllipsisV,
-  FaThumbsUp,
-  FaCalendar,
-  FaEye,
-  FaComment,
   FaTimes,
   FaCheck,
+  FaExternalLinkAlt,
+  FaGlobe,
+  FaMapMarkerAlt,
+  FaSpinner,
+  FaEye,
+  FaCalendar,
+  FaArrowLeft,
 } from "react-icons/fa";
 import "./Channel.css";
 
@@ -36,6 +38,7 @@ const Channel = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -49,92 +52,266 @@ const Channel = () => {
     category: "Education",
     tags: "",
   });
+  const [formErrors, setFormErrors] = useState({});
 
-  // Check if current user is the channel owner
-  const isChannelOwner = useCallback(() => {
-    if (!user || !channel) return false;
+  // ✅ Validate MongoDB ObjectId
+  const isValidChannelId = (channelId) => {
+    if (!channelId) return false;
 
-    // Get user ID
-    const userId = user._id?.toString();
-    if (!userId) return false;
-
-    // Check if user owns the channel
-    if (channel.owner && channel.owner._id) {
-      return channel.owner._id.toString() === userId;
+    // Allow various formats
+    if (
+      channelId === "undefined" ||
+      channelId === "null" ||
+      channelId === "unknown"
+    ) {
+      return false;
     }
 
-    // If owner is a string (not populated)
-    if (typeof channel.owner === "string") {
-      return channel.owner.toString() === userId;
+    // Check if it's a valid MongoDB ObjectId (24 hex characters)
+    const objectIdPattern = /^[0-9a-fA-F]{24}$/;
+    if (objectIdPattern.test(channelId)) {
+      return true;
+    }
+
+    // Also accept string IDs from the database
+    return typeof channelId === "string" && channelId.length > 5;
+  };
+
+  // ✅ CRITICAL FIX: Check if current user is the channel owner
+  const isChannelOwner = useCallback(() => {
+    if (!user || !channel) return false;
+    if (!user._id) return false;
+
+    const userId = user._id.toString();
+
+    // First check if user owns the channel via the channel.owner field
+    if (channel.owner) {
+      // If owner is populated object
+      if (channel.owner._id) {
+        return channel.owner._id.toString() === userId;
+      }
+      // If owner is direct ID string
+      if (typeof channel.owner === "string") {
+        return channel.owner === userId;
+      }
+    }
+
+    // Fallback: check if user's ID matches the channel owner from user data
+    try {
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        const parsedUser = JSON.parse(userData);
+        if (parsedUser.channels && Array.isArray(parsedUser.channels)) {
+          // Check if this channel ID is in user's channels array
+          return parsedUser.channels.some(
+            (channelId) => channelId.toString() === channel._id.toString()
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Error checking user channels:", err);
     }
 
     return false;
   }, [user, channel]);
 
+  // ✅ Validate video form
+  const validateVideoForm = () => {
+    const errors = {};
+
+    if (!videoForm.title.trim()) {
+      errors.title = "Title is required";
+    }
+
+    if (!videoForm.videoUrl.trim()) {
+      errors.videoUrl = "Video URL is required";
+    } else if (
+      !videoForm.videoUrl.includes("youtube.com/embed") &&
+      !videoForm.videoUrl.includes("youtu.be") &&
+      !videoForm.videoUrl.includes("youtube.com/watch")
+    ) {
+      errors.videoUrl = "Please provide a valid YouTube URL";
+    }
+
+    if (!videoForm.thumbnailUrl.trim()) {
+      errors.thumbnailUrl = "Thumbnail URL is required";
+    } else if (!videoForm.thumbnailUrl.startsWith("http")) {
+      errors.thumbnailUrl = "Please provide a valid URL";
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // ✅ Fetch channel and videos
   const fetchChannel = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
 
-      console.log("📡 Fetching channel:", id);
+      console.log("📡 Fetching channel with ID:", id);
 
-      const response = await channelAPI.getChannel(id);
-
-      if (!response.data) {
-        throw new Error("Channel not found");
+      // Validate channel ID
+      if (!id || id === "undefined" || id === "null") {
+        setError("Channel ID is required");
+        setLoading(false);
+        return;
       }
 
-      setChannel(response.data);
+      // Try different approaches to fetch the channel
+      let channelData = null;
+
+      // Approach 1: Try to fetch by direct ID
+      try {
+        const channelResponse = await channelAPI.getChannel(id);
+        if (channelResponse.data && channelResponse.data.success) {
+          channelData = channelResponse.data.channel;
+        }
+      } catch (error1) {
+        console.log("Approach 1 failed:", error1.message);
+
+        // Approach 2: If user is logged in, try to get their channel
+        if (user) {
+          try {
+            const myChannelResponse = await channelAPI.getMyChannel();
+            if (myChannelResponse.data && myChannelResponse.data.channel) {
+              channelData = myChannelResponse.data.channel;
+
+              // Redirect to the correct channel URL
+              if (channelData._id !== id) {
+                navigate(`/channel/${channelData._id}`, { replace: true });
+                return;
+              }
+            }
+          } catch (error2) {
+            console.log("Approach 2 failed:", error2.message);
+          }
+        }
+      }
+
+      if (!channelData) {
+        setError("Channel not found or you don't have permission to view it");
+        setLoading(false);
+        return;
+      }
+
+      setChannel(channelData);
 
       // Check subscription status
-      if (user && response.data.subscribers) {
-        const subscribed = response.data.subscribers.some(
-          (sub) =>
-            sub._id?.toString() === user._id?.toString() ||
-            sub.toString() === user._id?.toString()
-        );
+      if (user && channelData.subscribers) {
+        const subscribed = channelData.subscribers.some((sub) => {
+          if (sub._id) {
+            return sub._id.toString() === user._id?.toString();
+          }
+          return sub.toString() === user._id?.toString();
+        });
         setIsSubscribed(subscribed);
       }
 
-      // Fetch videos for this channel
+      // Now fetch videos for this channel
       try {
-        const videosResponse = await videoAPI.getVideos();
-        const channelVideos = videosResponse.data.filter(
-          (video) =>
-            video.channelId &&
-            (video.channelId._id === id || video.channelId === id)
+        const videosResponse = await videoAPI.getVideos(
+          "",
+          "",
+          channelData._id
         );
-        setVideos(channelVideos);
+        console.log("🎬 Videos response:", videosResponse.data);
+
+        if (videosResponse.data && videosResponse.data.videos) {
+          setVideos(videosResponse.data.videos);
+        } else if (Array.isArray(videosResponse.data)) {
+          setVideos(videosResponse.data);
+        } else {
+          setVideos(channelData.videos || []);
+        }
       } catch (videoError) {
-        console.error("Error fetching videos:", videoError);
-        setVideos([]);
+        console.error("Error fetching videos, using channel data:", videoError);
+        setVideos(channelData.videos || []);
       }
+
+      console.log("✅ Channel data loaded successfully:", {
+        channelId: channelData._id,
+        owner: channelData.owner,
+        isCurrentUserOwner: isChannelOwner(),
+        currentUserId: user?._id,
+        videoCount: videos.length,
+      });
     } catch (error) {
       console.error("❌ Error fetching channel:", error);
-      setError(
-        error.response?.data?.message ||
-          error.message ||
-          "Failed to load channel"
-      );
+
+      // User-friendly error messages
+      if (error.message.includes("Invalid channel ID")) {
+        setError("The channel ID format is not valid. Please check the URL.");
+      } else if (error.message.includes("not found")) {
+        setError("This channel doesn't exist or has been removed.");
+      } else if (error.message.includes("Network Error")) {
+        setError(
+          "Unable to connect to the server. Please check your internet connection."
+        );
+      } else {
+        setError(error.message || "Failed to load channel. Please try again.");
+      }
+
+      setChannel(null);
+      setVideos([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [id, user]);
+  }, [id, user, navigate]);
 
+  // ✅ Handle refresh
   const handleRefresh = () => {
     setRefreshing(true);
     fetchChannel();
   };
 
-  useEffect(() => {
-    if (id) {
-      fetchChannel();
+  // ✅ Handle subscribe/unsubscribe
+  const handleSubscribe = async () => {
+    if (!isAuthenticated()) {
+      alert("Please login to subscribe to channels");
+      navigate("/auth");
+      return;
     }
-  }, [id, fetchChannel]);
 
+    if (!channel || !channel._id) {
+      alert("Channel not found");
+      return;
+    }
+
+    try {
+      setSubscribing(true);
+
+      if (isSubscribed) {
+        await channelAPI.unsubscribe(channel._id);
+        setChannel((prev) => ({
+          ...prev,
+          subscriberCount: Math.max(0, (prev.subscriberCount || 1) - 1),
+        }));
+        setIsSubscribed(false);
+      } else {
+        await channelAPI.subscribe(channel._id);
+        setChannel((prev) => ({
+          ...prev,
+          subscriberCount: (prev.subscriberCount || 0) + 1,
+        }));
+        setIsSubscribed(true);
+      }
+    } catch (error) {
+      console.error("Error subscribing:", error);
+      alert(error.message || "Failed to update subscription");
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  // ✅ Handle create video - FIXED
   const handleCreateVideo = async (e) => {
     e.preventDefault();
+
+    if (!validateVideoForm()) {
+      return;
+    }
 
     if (!isAuthenticated()) {
       alert("Please login to upload videos");
@@ -147,29 +324,34 @@ const Channel = () => {
       return;
     }
 
-    // Validation
-    if (!videoForm.title.trim()) {
-      alert("Video title is required");
-      return;
-    }
-
-    if (!videoForm.videoUrl.trim()) {
-      alert("Video URL is required");
-      return;
-    }
-
-    if (!videoForm.thumbnailUrl.trim()) {
-      alert("Thumbnail URL is required");
+    // Check if user owns the channel
+    if (!isChannelOwner()) {
+      alert("You can only upload videos to your own channel");
       return;
     }
 
     try {
       setLoading(true);
 
+      // Process YouTube URL to ensure it's in embed format
+      let processedVideoUrl = videoForm.videoUrl;
+      if (processedVideoUrl.includes("youtu.be/")) {
+        const videoId = processedVideoUrl.split("youtu.be/")[1].split("?")[0];
+        processedVideoUrl = `https://www.youtube.com/embed/${videoId}`;
+      } else if (processedVideoUrl.includes("youtube.com/watch")) {
+        const videoId = new URL(processedVideoUrl).searchParams.get("v");
+        if (videoId) {
+          processedVideoUrl = `https://www.youtube.com/embed/${videoId}`;
+        }
+      }
+
       const videoData = {
-        ...videoForm,
+        title: videoForm.title.trim(),
+        description: videoForm.description?.trim() || "",
+        videoUrl: processedVideoUrl,
+        thumbnailUrl: videoForm.thumbnailUrl.trim(),
         channelId: channel._id,
-        uploader: user._id,
+        category: videoForm.category || "Education",
         tags: videoForm.tags
           ? videoForm.tags
               .split(",")
@@ -178,43 +360,86 @@ const Channel = () => {
           : [],
       };
 
+      console.log("📤 Creating video:", videoData);
       const response = await videoAPI.createVideo(videoData);
+      console.log("✅ Video created:", response.data);
 
-      // Add the new video to the list
-      setVideos((prev) => [response.data, ...prev]);
-      setShowCreateModal(false);
+      if (response.data && response.data.video) {
+        // Update state - add new video at the beginning
+        const newVideo = response.data.video;
+        setVideos((prev) => [newVideo, ...prev]);
 
-      // Reset form
-      setVideoForm({
-        title: "",
-        description: "",
-        videoUrl: "",
-        thumbnailUrl: "",
-        category: "Education",
-        tags: "",
-      });
+        // Update channel video count
+        setChannel((prev) => ({
+          ...prev,
+          videoCount: (prev.videoCount || 0) + 1,
+        }));
 
-      alert("🎉 Video uploaded successfully!");
+        setShowCreateModal(false);
+        setFormErrors({});
 
-      // Refresh channel data
-      fetchChannel();
+        // Reset form
+        setVideoForm({
+          title: "",
+          description: "",
+          videoUrl: "",
+          thumbnailUrl: "",
+          category: "Education",
+          tags: "",
+        });
+
+        alert("🎉 Video uploaded successfully!");
+      } else {
+        throw new Error("Invalid response from server");
+      }
     } catch (error) {
       console.error("❌ Error creating video:", error);
-      alert(error.response?.data?.message || "Failed to upload video");
+      alert(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to upload video"
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Handle update video - FIXED
   const handleUpdateVideo = async (e) => {
     e.preventDefault();
     if (!selectedVideo) return;
 
+    if (!validateVideoForm()) {
+      return;
+    }
+
+    // Check if user owns the channel
+    if (!isChannelOwner()) {
+      alert("You can only edit videos in your own channel");
+      return;
+    }
+
     try {
       setLoading(true);
 
+      // Process YouTube URL to ensure it's in embed format
+      let processedVideoUrl = videoForm.videoUrl;
+      if (processedVideoUrl.includes("youtu.be/")) {
+        const videoId = processedVideoUrl.split("youtu.be/")[1].split("?")[0];
+        processedVideoUrl = `https://www.youtube.com/embed/${videoId}`;
+      } else if (processedVideoUrl.includes("youtube.com/watch")) {
+        const videoId = new URL(processedVideoUrl).searchParams.get("v");
+        if (videoId) {
+          processedVideoUrl = `https://www.youtube.com/embed/${videoId}`;
+        }
+      }
+
       const videoData = {
-        ...videoForm,
+        title: videoForm.title.trim(),
+        description: videoForm.description?.trim() || "",
+        videoUrl: processedVideoUrl,
+        thumbnailUrl: videoForm.thumbnailUrl.trim(),
+        category: videoForm.category || "Education",
         tags: videoForm.tags
           ? videoForm.tags
               .split(",")
@@ -223,78 +448,172 @@ const Channel = () => {
           : [],
       };
 
+      console.log("📝 Updating video:", selectedVideo._id, videoData);
       const response = await videoAPI.updateVideo(selectedVideo._id, videoData);
+      console.log("✅ Video updated:", response.data);
 
       // Update the video in the list
-      setVideos((prev) =>
-        prev.map((video) =>
-          video._id === selectedVideo._id ? response.data : video
-        )
-      );
+      if (response.data && response.data.video) {
+        setVideos((prev) =>
+          prev.map((video) =>
+            video._id === selectedVideo._id ? response.data.video : video
+          )
+        );
+      }
 
       setShowEditModal(false);
       setSelectedVideo(null);
+      setFormErrors({});
 
       alert("✅ Video updated successfully!");
     } catch (error) {
       console.error("❌ Error updating video:", error);
-      alert(error.response?.data?.message || "Failed to update video");
+      alert(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to update video"
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Handle delete video - FIXED
   const handleDeleteVideo = async (videoId) => {
-    if (!window.confirm("Are you sure you want to delete this video?")) return;
-
-    try {
-      setLoading(true);
-      await videoAPI.deleteVideo(videoId);
-
-      // Remove the video from the list
-      setVideos((prev) => prev.filter((v) => v._id !== videoId));
-
-      setShowDeleteModal(false);
-      alert("🗑️ Video deleted successfully!");
-    } catch (error) {
-      console.error("❌ Error deleting video:", error);
-      alert(error.response?.data?.message || "Failed to delete video");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubscribe = async () => {
-    if (!isAuthenticated()) {
-      alert("Please login to subscribe");
-      navigate("/auth");
+    // Check if user owns the channel
+    if (!isChannelOwner()) {
+      alert("You can only delete videos from your own channel");
       return;
     }
 
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this video? This action cannot be undone."
+      )
+    )
+      return;
+
     try {
-      // TODO: Implement subscription API
-      setIsSubscribed(!isSubscribed);
-      alert(isSubscribed ? "Unsubscribed" : "Subscribed");
+      setLoading(true);
+      console.log("🗑️ Deleting video:", videoId);
+
+      await videoAPI.deleteVideo(videoId);
+      console.log("✅ Video deleted successfully");
+
+      // Update state - remove video from list
+      setVideos((prev) => prev.filter((v) => v._id !== videoId));
+
+      // Update channel video count
+      setChannel((prev) => ({
+        ...prev,
+        videoCount: Math.max(0, (prev.videoCount || 1) - 1),
+      }));
+
+      setShowDeleteModal(false);
+      setSelectedVideo(null);
+
+      alert("🗑️ Video deleted successfully!");
     } catch (error) {
-      console.error("Error subscribing:", error);
+      console.error("❌ Error deleting video:", error);
+      alert(
+        error.response?.data?.message ||
+          error.message ||
+          "Failed to delete video"
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
+  // ✅ Format numbers for display
   const formatNumber = (num) => {
-    if (!num) return "0";
-    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
-    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
-    return num.toString();
+    if (!num && num !== 0) return "0";
+    const n = Number(num);
+    if (isNaN(n)) return "0";
+    if (n >= 1000000000) return `${(n / 1000000000).toFixed(1)}B`;
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toString();
   };
 
+  // ✅ Format date
   const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    if (!dateString) return "Unknown";
+    try {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffTime = Math.abs(now - date);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) return "Today";
+      if (diffDays === 1) return "Yesterday";
+      if (diffDays < 7) return `${diffDays} days ago`;
+      if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    } catch {
+      return "Invalid date";
+    }
   };
+
+  // ✅ Share channel
+  const handleShareChannel = () => {
+    const channelUrl = window.location.href;
+    if (navigator.share) {
+      navigator.share({
+        title: channel?.channelName || "Channel",
+        text: `Check out this channel: ${channel?.channelName}`,
+        url: channelUrl,
+      });
+    } else {
+      navigator.clipboard.writeText(channelUrl);
+      alert("Channel link copied to clipboard!");
+    }
+  };
+
+  // ✅ Edit video button click handler
+  const handleEditVideoClick = (video) => {
+    setSelectedVideo(video);
+    setVideoForm({
+      title: video.title || "",
+      description: video.description || "",
+      videoUrl: video.videoUrl || "",
+      thumbnailUrl: video.thumbnailUrl || "",
+      category: video.category || "Education",
+      tags: video.tags ? video.tags.join(", ") : "",
+    });
+    setFormErrors({});
+    setShowEditModal(true);
+  };
+
+  // ✅ Open create video modal
+  const openCreateVideoModal = () => {
+    setVideoForm({
+      title: "",
+      description: "",
+      videoUrl: "",
+      thumbnailUrl: "",
+      category: "Education",
+      tags: "",
+    });
+    setFormErrors({});
+    setShowCreateModal(true);
+  };
+
+  // Effect to fetch channel data
+  useEffect(() => {
+    if (!id || id === "undefined" || id === "null") {
+      setError("Invalid channel ID");
+      setLoading(false);
+      return;
+    }
+
+    fetchChannel();
+  }, [id, fetchChannel]);
 
   // Loading state
   if (loading && !refreshing) {
@@ -313,16 +632,18 @@ const Channel = () => {
     return (
       <div className="channel-error">
         <div className="error-content">
-          <FaYoutube size={60} color="#FF0000" />
-          <h2>Channel Not Found</h2>
+          <FaYoutube size={80} color="#FF0000" />
+          <h2>Unable to Load Channel</h2>
           <p>{error}</p>
           <div className="error-actions">
             <button onClick={() => navigate("/")} className="btn btn-primary">
               <FaHome /> Back to Home
             </button>
-            <button onClick={handleRefresh} className="btn btn-secondary">
-              <FaSyncAlt /> Try Again
-            </button>
+            {isValidChannelId(id) && (
+              <button onClick={handleRefresh} className="btn btn-secondary">
+                <FaSyncAlt /> Try Again
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -330,13 +651,31 @@ const Channel = () => {
   }
 
   if (!channel) {
-    return null;
+    return (
+      <div className="channel-error">
+        <div className="error-content">
+          <FaYoutube size={80} color="#FF0000" />
+          <h2>Channel Not Available</h2>
+          <p>
+            The channel you're looking for doesn't exist or has been removed.
+          </p>
+          <button onClick={() => navigate("/")} className="btn btn-primary">
+            <FaHome /> Back to Home
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const isOwner = isChannelOwner();
 
   return (
     <div className="channel-page">
+      {/* Back button for mobile */}
+      <button onClick={() => navigate(-1)} className="channel-back-button">
+        <FaArrowLeft /> Back
+      </button>
+
       {/* Channel Header/Banner */}
       <div className="channel-header">
         <div
@@ -347,7 +686,16 @@ const Channel = () => {
             })`,
           }}
         >
-          <div className="banner-overlay"></div>
+          <div className="banner-overlay">
+            {isOwner && (
+              <button
+                onClick={() => navigate(`/manage-channel`)}
+                className="btn-edit-banner"
+              >
+                <FaEdit /> Edit Banner
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="channel-info-container">
@@ -355,6 +703,7 @@ const Channel = () => {
             <img
               src={
                 channel.owner?.avatar ||
+                channel.channelAvatar ||
                 "https://cdn-icons-png.flaticon.com/512/149/149071.png"
               }
               alt={channel.channelName}
@@ -364,25 +713,51 @@ const Channel = () => {
                   "https://cdn-icons-png.flaticon.com/512/149/149071.png";
               }}
             />
+            {isOwner && (
+              <button
+                onClick={() => navigate(`/manage-channel`)}
+                className="btn-edit-avatar"
+              >
+                <FaEdit />
+              </button>
+            )}
           </div>
 
           <div className="channel-details">
-            <h1 className="channel-name">{channel.channelName}</h1>
+            <div className="channel-title-section">
+              <h1 className="channel-name">
+                {channel.channelName || "Unnamed Channel"}
+                {channel.verified && (
+                  <span className="verified-badge" title="Verified Channel">
+                    ✓
+                  </span>
+                )}
+              </h1>
+              <div className="channel-owner-info">
+                <span className="owner-label">Channel Owner:</span>
+                <span className="owner-name">
+                  {channel.owner?.username || "Unknown"}
+                </span>
+                {isOwner && <span className="owner-you-badge">(You)</span>}
+              </div>
+            </div>
 
             <div className="channel-meta">
-              <span className="meta-item">
-                <FaUser /> {channel.owner?.username || "Unknown"}
-              </span>
               <span className="meta-item">
                 <FaSubscript /> {formatNumber(channel.subscriberCount || 0)}{" "}
                 subscribers
               </span>
               <span className="meta-item">
-                <FaVideo /> {channel.videoCount || 0} videos
+                <FaVideo /> {videos.length || channel.videoCount || 0} videos
               </span>
               {channel.createdAt && (
                 <span className="meta-item">
                   <FaCalendar /> Joined {formatDate(channel.createdAt)}
+                </span>
+              )}
+              {channel.location && (
+                <span className="meta-item">
+                  <FaMapMarkerAlt /> {channel.location}
                 </span>
               )}
             </div>
@@ -391,25 +766,47 @@ const Channel = () => {
               {channel.description || "No description provided."}
             </p>
 
+            {channel.website && (
+              <div className="channel-website">
+                <FaGlobe />
+                <a
+                  href={channel.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="website-link"
+                >
+                  {channel.website.replace(/^https?:\/\//, "")}
+                  <FaExternalLinkAlt />
+                </a>
+              </div>
+            )}
+
             <div className="channel-actions">
               {isOwner ? (
                 <>
                   <button
-                    onClick={() => setShowCreateModal(true)}
+                    onClick={openCreateVideoModal}
                     className="btn btn-primary"
+                    disabled={loading}
                   >
                     <FaUpload /> Upload Video
                   </button>
                   <button
-                    onClick={() => navigate(`/channel/edit/${channel._id}`)}
+                    onClick={() => navigate("/manage-channel")}
                     className="btn btn-secondary"
                   >
                     <FaCog /> Manage Channel
                   </button>
                   <button
+                    onClick={handleShareChannel}
+                    className="btn btn-outline"
+                  >
+                    <FaShare /> Share
+                  </button>
+                  <button
                     onClick={handleRefresh}
                     className="btn btn-outline"
-                    disabled={refreshing}
+                    disabled={refreshing || loading}
                   >
                     <FaSyncAlt className={refreshing ? "spinning" : ""} />
                     {refreshing ? "Refreshing..." : "Refresh"}
@@ -422,8 +819,11 @@ const Channel = () => {
                     className={`btn ${
                       isSubscribed ? "btn-subscribed" : "btn-primary"
                     }`}
+                    disabled={subscribing || loading}
                   >
-                    {isSubscribed ? (
+                    {subscribing ? (
+                      <FaSpinner className="spinning" />
+                    ) : isSubscribed ? (
                       <>
                         <FaCheck /> Subscribed
                       </>
@@ -433,11 +833,11 @@ const Channel = () => {
                       </>
                     )}
                   </button>
-                  <button className="btn btn-outline">
+                  <button
+                    onClick={handleShareChannel}
+                    className="btn btn-outline"
+                  >
                     <FaShare /> Share
-                  </button>
-                  <button className="btn btn-icon">
-                    <FaEllipsisV />
                   </button>
                 </>
               )}
@@ -453,20 +853,30 @@ const Channel = () => {
             <FaVideo /> Videos ({videos.length})
           </h2>
 
-          {isOwner && videos.length > 0 && (
-            <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn btn-primary btn-sm"
-            >
-              <FaPlus /> Upload Video
-            </button>
-          )}
+          <div className="section-actions">
+            {videos.length > 0 && (
+              <select className="sort-select" defaultValue="newest">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="popular">Most popular</option>
+              </select>
+            )}
+            {isOwner && (
+              <button
+                onClick={openCreateVideoModal}
+                className="btn btn-primary btn-sm"
+                disabled={loading}
+              >
+                <FaPlus /> Upload Video
+              </button>
+            )}
+          </div>
         </div>
 
         {videos.length === 0 ? (
           <div className="no-videos">
             <div className="no-videos-content">
-              <FaVideo size={60} color="#ccc" />
+              <FaVideo size={80} color="#ccc" />
               <h3>No videos yet</h3>
               <p>
                 {isOwner
@@ -475,8 +885,9 @@ const Channel = () => {
               </p>
               {isOwner && (
                 <button
-                  onClick={() => setShowCreateModal(true)}
+                  onClick={openCreateVideoModal}
                   className="btn btn-primary"
+                  disabled={loading}
                 >
                   <FaUpload /> Upload Your First Video
                 </button>
@@ -492,22 +903,19 @@ const Channel = () => {
                 {isOwner && (
                   <div className="video-actions">
                     <button
-                      onClick={() => {
-                        setSelectedVideo(video);
-                        setVideoForm({
-                          title: video.title || "",
-                          description: video.description || "",
-                          videoUrl: video.videoUrl || "",
-                          thumbnailUrl: video.thumbnailUrl || "",
-                          category: video.category || "Education",
-                          tags: video.tags ? video.tags.join(", ") : "",
-                        });
-                        setShowEditModal(true);
-                      }}
+                      onClick={() => handleEditVideoClick(video)}
                       className="btn-action btn-edit"
                       title="Edit video"
+                      disabled={loading}
                     >
                       <FaEdit /> Edit
+                    </button>
+                    <button
+                      onClick={() => navigate(`/video/${video._id}`)}
+                      className="btn-action btn-analytics"
+                      title="View video"
+                    >
+                      <FaEye /> View
                     </button>
                     <button
                       onClick={() => {
@@ -516,6 +924,7 @@ const Channel = () => {
                       }}
                       className="btn-action btn-delete"
                       title="Delete video"
+                      disabled={loading}
                     >
                       <FaTrash /> Delete
                     </button>
@@ -527,54 +936,19 @@ const Channel = () => {
         )}
       </div>
 
-      {/* About Section */}
-      {channel.description && (
-        <div className="about-section">
-          <h3>About</h3>
-          <div className="about-content">
-            <p>{channel.description}</p>
-            <div className="channel-stats-grid">
-              <div className="stat-card">
-                <span className="stat-label">Total Videos</span>
-                <span className="stat-value">
-                  <FaVideo /> {channel.videoCount || 0}
-                </span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Subscribers</span>
-                <span className="stat-value">
-                  <FaSubscript /> {formatNumber(channel.subscriberCount || 0)}
-                </span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Total Views</span>
-                <span className="stat-value">
-                  <FaEye /> {formatNumber(channel.totalViews || 0)}
-                </span>
-              </div>
-              <div className="stat-card">
-                <span className="stat-label">Channel Created</span>
-                <span className="stat-value">
-                  <FaCalendar /> {formatDate(channel.createdAt)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Create Video Modal */}
       {showCreateModal && (
         <div
           className="modal-overlay"
-          onClick={() => setShowCreateModal(false)}
+          onClick={() => !loading && setShowCreateModal(false)}
         >
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Upload New Video</h2>
               <button
-                onClick={() => setShowCreateModal(false)}
+                onClick={() => !loading && setShowCreateModal(false)}
                 className="modal-close"
+                disabled={loading}
               >
                 <FaTimes />
               </button>
@@ -592,7 +966,11 @@ const Channel = () => {
                   placeholder="Enter video title"
                   required
                   disabled={loading}
+                  className={formErrors.title ? "input-error" : ""}
                 />
+                {formErrors.title && (
+                  <span className="error-text">{formErrors.title}</span>
+                )}
               </div>
 
               <div className="form-group">
@@ -617,11 +995,19 @@ const Channel = () => {
                     onChange={(e) =>
                       setVideoForm({ ...videoForm, videoUrl: e.target.value })
                     }
-                    placeholder="https://example.com/video.mp4"
+                    placeholder="https://www.youtube.com/embed/VIDEO_ID"
                     required
                     disabled={loading}
+                    className={formErrors.videoUrl ? "input-error" : ""}
                   />
-                  <small>Direct video link or YouTube URL</small>
+                  {formErrors.videoUrl ? (
+                    <span className="error-text">{formErrors.videoUrl}</span>
+                  ) : (
+                    <small className="form-help">
+                      Use YouTube embed URL
+                      (https://www.youtube.com/embed/VIDEO_ID)
+                    </small>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -635,11 +1021,20 @@ const Channel = () => {
                         thumbnailUrl: e.target.value,
                       })
                     }
-                    placeholder="https://example.com/thumbnail.jpg"
+                    placeholder="https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg"
                     required
                     disabled={loading}
+                    className={formErrors.thumbnailUrl ? "input-error" : ""}
                   />
-                  <small>Image URL for thumbnail</small>
+                  {formErrors.thumbnailUrl ? (
+                    <span className="error-text">
+                      {formErrors.thumbnailUrl}
+                    </span>
+                  ) : (
+                    <small className="form-help">
+                      YouTube thumbnail URL (1280x720 recommended)
+                    </small>
+                  )}
                 </div>
               </div>
 
@@ -660,6 +1055,169 @@ const Channel = () => {
                     <option value="Gaming">Gaming</option>
                     <option value="Sports">Sports</option>
                     <option value="Technology">Technology</option>
+                    <option value="Lifestyle">Lifestyle</option>
+                    <option value="News">News</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label>Tags (comma separated)</label>
+                  <input
+                    type="text"
+                    value={videoForm.tags}
+                    onChange={(e) =>
+                      setVideoForm({ ...videoForm, tags: e.target.value })
+                    }
+                    placeholder="react, tutorial, javascript"
+                    disabled={loading}
+                  />
+                  <small className="form-help">
+                    Add relevant tags to help viewers find your video
+                  </small>
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  onClick={() => !loading && setShowCreateModal(false)}
+                  className="btn btn-secondary"
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <>
+                      <FaSpinner className="spinning" /> Uploading...
+                    </>
+                  ) : (
+                    "Upload Video"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Video Modal */}
+      {showEditModal && selectedVideo && (
+        <div
+          className="modal-overlay"
+          onClick={() => !loading && setShowEditModal(false)}
+        >
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Edit Video</h2>
+              <button
+                onClick={() => !loading && setShowEditModal(false)}
+                className="modal-close"
+                disabled={loading}
+              >
+                <FaTimes />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateVideo}>
+              <div className="form-group">
+                <label>Title *</label>
+                <input
+                  type="text"
+                  value={videoForm.title}
+                  onChange={(e) =>
+                    setVideoForm({ ...videoForm, title: e.target.value })
+                  }
+                  placeholder="Enter video title"
+                  required
+                  disabled={loading}
+                  className={formErrors.title ? "input-error" : ""}
+                />
+                {formErrors.title && (
+                  <span className="error-text">{formErrors.title}</span>
+                )}
+              </div>
+
+              <div className="form-group">
+                <label>Description</label>
+                <textarea
+                  value={videoForm.description}
+                  onChange={(e) =>
+                    setVideoForm({ ...videoForm, description: e.target.value })
+                  }
+                  placeholder="Enter video description"
+                  rows="3"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Video URL *</label>
+                  <input
+                    type="url"
+                    value={videoForm.videoUrl}
+                    onChange={(e) =>
+                      setVideoForm({ ...videoForm, videoUrl: e.target.value })
+                    }
+                    placeholder="https://www.youtube.com/embed/VIDEO_ID"
+                    required
+                    disabled={loading}
+                    className={formErrors.videoUrl ? "input-error" : ""}
+                  />
+                  {formErrors.videoUrl && (
+                    <span className="error-text">{formErrors.videoUrl}</span>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label>Thumbnail URL *</label>
+                  <input
+                    type="url"
+                    value={videoForm.thumbnailUrl}
+                    onChange={(e) =>
+                      setVideoForm({
+                        ...videoForm,
+                        thumbnailUrl: e.target.value,
+                      })
+                    }
+                    placeholder="https://img.youtube.com/vi/VIDEO_ID/maxresdefault.jpg"
+                    required
+                    disabled={loading}
+                    className={formErrors.thumbnailUrl ? "input-error" : ""}
+                  />
+                  {formErrors.thumbnailUrl && (
+                    <span className="error-text">
+                      {formErrors.thumbnailUrl}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Category *</label>
+                  <select
+                    value={videoForm.category}
+                    onChange={(e) =>
+                      setVideoForm({ ...videoForm, category: e.target.value })
+                    }
+                    required
+                    disabled={loading}
+                  >
+                    <option value="Education">Education</option>
+                    <option value="Entertainment">Entertainment</option>
+                    <option value="Music">Music</option>
+                    <option value="Gaming">Gaming</option>
+                    <option value="Sports">Sports</option>
+                    <option value="Technology">Technology</option>
+                    <option value="Lifestyle">Lifestyle</option>
+                    <option value="News">News</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
@@ -681,7 +1239,7 @@ const Channel = () => {
               <div className="modal-actions">
                 <button
                   type="button"
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => !loading && setShowEditModal(false)}
                   className="btn btn-secondary"
                   disabled={loading}
                 >
@@ -692,31 +1250,15 @@ const Channel = () => {
                   className="btn btn-primary"
                   disabled={loading}
                 >
-                  {loading ? "Uploading..." : "Upload Video"}
+                  {loading ? (
+                    <>
+                      <FaSpinner className="spinning" /> Updating...
+                    </>
+                  ) : (
+                    "Update Video"
+                  )}
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Video Modal */}
-      {showEditModal && selectedVideo && (
-        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Edit Video</h2>
-              <button
-                onClick={() => setShowEditModal(false)}
-                className="modal-close"
-              >
-                <FaTimes />
-              </button>
-            </div>
-
-            <form onSubmit={handleUpdateVideo}>
-              {/* Same form structure as create modal */}
-              {/* ... */}
             </form>
           </div>
         </div>
@@ -726,29 +1268,41 @@ const Channel = () => {
       {showDeleteModal && selectedVideo && (
         <div
           className="modal-overlay"
-          onClick={() => setShowDeleteModal(false)}
+          onClick={() => !loading && setShowDeleteModal(false)}
         >
           <div className="modal modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Delete Video</h2>
               <button
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => !loading && setShowDeleteModal(false)}
                 className="modal-close"
+                disabled={loading}
               >
                 <FaTimes />
               </button>
             </div>
 
             <div className="modal-body">
-              <p>Are you sure you want to delete this video?</p>
-              <p className="text-muted">{selectedVideo.title}</p>
-              <p className="text-warning">This action cannot be undone.</p>
+              <div className="delete-warning">
+                <FaTrash size={40} color="#ff4444" />
+                <p>Are you sure you want to delete this video?</p>
+                <p className="video-title">{selectedVideo.title}</p>
+                <div className="video-stats">
+                  <span>
+                    <FaEye /> {formatNumber(selectedVideo.views || 0)} views
+                  </span>
+                  <span>
+                    <FaCalendar /> {formatDate(selectedVideo.createdAt)}
+                  </span>
+                </div>
+                <p className="text-danger">⚠️ This action cannot be undone.</p>
+              </div>
             </div>
 
             <div className="modal-actions">
               <button
                 type="button"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => !loading && setShowDeleteModal(false)}
                 className="btn btn-secondary"
                 disabled={loading}
               >
@@ -760,7 +1314,13 @@ const Channel = () => {
                 className="btn btn-danger"
                 disabled={loading}
               >
-                {loading ? "Deleting..." : "Delete Video"}
+                {loading ? (
+                  <>
+                    <FaSpinner className="spinning" /> Deleting...
+                  </>
+                ) : (
+                  "Delete Video"
+                )}
               </button>
             </div>
           </div>

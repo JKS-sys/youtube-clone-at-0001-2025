@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { videoAPI } from "../services/api";
+import { videoAPI, channelAPI } from "../services/api";
 import LikeDislikeButtons from "../components/LikeDislikeButtons";
 import CommentSection from "../components/CommentSection";
 import {
@@ -8,18 +8,59 @@ import {
   FaUserCircle,
   FaYoutube,
   FaExternalLinkAlt,
+  FaSpinner,
+  FaExclamationTriangle,
+  FaPlay,
+  FaEye,
+  FaCalendar,
+  FaTag,
+  FaShare,
+  FaDownload,
+  FaBookmark,
+  FaFlag,
+  FaThumbsUp,
+  FaThumbsDown,
+  FaComments,
+  FaEdit,
+  FaTrash,
+  FaCheck,
+  FaTimes,
+  FaUser,
 } from "react-icons/fa";
 import "./VideoPlayer.css";
 
 const VideoPlayer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const videoRef = useRef(null);
   const [video, setVideo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [playerError, setPlayerError] = useState(false);
-  const [useIframe, setUseIframe] = useState(false);
+  const [showFallbackPlayer, setShowFallbackPlayer] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [channel, setChannel] = useState(null);
 
+  // Get current user
+  useEffect(() => {
+    const getUser = () => {
+      try {
+        const userData = localStorage.getItem("user");
+        if (userData && userData !== "undefined") {
+          return JSON.parse(userData);
+        }
+      } catch (error) {
+        console.error("Error parsing user data:", error);
+        return null;
+      }
+      return null;
+    };
+    setUser(getUser());
+  }, []);
+
+  // Fetch video data
   useEffect(() => {
     const fetchVideo = async () => {
       try {
@@ -28,18 +69,29 @@ const VideoPlayer = () => {
         console.log("📡 Fetching video:", id);
 
         const response = await videoAPI.getVideo(id);
-        console.log("📦 Video data:", response.data);
+        console.log("📦 Video data received:", response.data);
 
-        if (!response.data) {
+        if (!response.data || !response.data.video) {
           throw new Error("Video not found");
         }
 
-        setVideo(response.data);
+        const videoData = response.data.video;
+        setVideo(videoData);
 
         // Check if video URL is valid
-        if (!response.data.videoUrl) {
+        if (!videoData.videoUrl) {
           setError("Video URL is missing");
           setPlayerError(true);
+        }
+
+        // If video has channel info, fetch channel details
+        if (videoData.channelId) {
+          fetchChannelDetails(videoData.channelId);
+        }
+
+        // Check if user is subscribed to channel
+        if (user && videoData.channelId) {
+          checkSubscription(videoData.channelId._id || videoData.channelId);
         }
       } catch (err) {
         console.error("❌ Error fetching video:", err);
@@ -52,45 +104,93 @@ const VideoPlayer = () => {
       }
     };
 
-    if (id) {
+    if (id && id !== "undefined" && id !== "null") {
       fetchVideo();
+    } else {
+      setError("Invalid video ID");
+      setLoading(false);
     }
-  }, [id]);
+  }, [id, user]);
 
-  // Get video embed URL
-  const getVideoEmbedUrl = (videoUrl) => {
-    if (!videoUrl) return "";
-
-    // YouTube URL conversion
-    if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
-      let videoId = "";
-
-      // Extract video ID from various formats
-      if (videoUrl.includes("youtube.com/watch?v=")) {
-        videoId = videoUrl.split("v=")[1]?.split("&")[0];
-      } else if (videoUrl.includes("youtu.be/")) {
-        videoId = videoUrl.split("youtu.be/")[1]?.split("?")[0];
-      } else if (videoUrl.includes("youtube.com/embed/")) {
-        videoId = videoUrl.split("embed/")[1]?.split("?")[0];
+  // Fetch channel details
+  const fetchChannelDetails = async (channelId) => {
+    try {
+      const channelResponse = await channelAPI.getChannel(
+        typeof channelId === "object" ? channelId._id : channelId
+      );
+      if (channelResponse.data && channelResponse.data.channel) {
+        setChannel(channelResponse.data.channel);
       }
-
-      if (videoId) {
-        return `https://www.youtube.com/embed/${videoId}`;
-      }
+    } catch (error) {
+      console.error("Error fetching channel details:", error);
     }
-
-    // For direct video files
-    if (
-      videoUrl.includes(".mp4") ||
-      videoUrl.includes(".webm") ||
-      videoUrl.includes(".ogg")
-    ) {
-      return videoUrl;
-    }
-
-    return videoUrl;
   };
 
+  // Check subscription status
+  const checkSubscription = async (channelId) => {
+    try {
+      const channelResponse = await channelAPI.getChannel(channelId);
+      if (channelResponse.data && channelResponse.data.channel) {
+        const channelData = channelResponse.data.channel;
+        if (channelData.subscribers && user) {
+          const subscribed = channelData.subscribers.some(
+            (sub) =>
+              (sub._id && sub._id.toString() === user._id?.toString()) ||
+              sub.toString() === user._id?.toString()
+          );
+          setIsSubscribed(subscribed);
+        }
+      }
+    } catch (error) {
+      console.error("Error checking subscription:", error);
+    }
+  };
+
+  // Get safe video URL for different formats
+  const getSafeVideoUrl = (videoUrl) => {
+    if (!videoUrl) return null;
+
+    try {
+      // If it's already a valid URL, return it
+      if (videoUrl.startsWith("http://") || videoUrl.startsWith("https://")) {
+        return videoUrl;
+      }
+
+      // If it's a YouTube ID without embed format
+      if (videoUrl.length === 11 && !videoUrl.includes("/")) {
+        return `https://www.youtube.com/embed/${videoUrl}`;
+      }
+
+      // Try to extract YouTube video ID from various formats
+      const youtubeIdPatterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
+        /^([a-zA-Z0-9_-]{11})$/,
+      ];
+
+      for (const pattern of youtubeIdPatterns) {
+        const match = videoUrl.match(pattern);
+        if (match && match[1]) {
+          return `https://www.youtube.com/embed/${match[1]}?rel=0&modestbranding=1&autoplay=1`;
+        }
+      }
+
+      // If it looks like a direct video file
+      if (
+        videoUrl.includes(".mp4") ||
+        videoUrl.includes(".webm") ||
+        videoUrl.includes(".avi")
+      ) {
+        return videoUrl;
+      }
+
+      return videoUrl;
+    } catch (error) {
+      console.error("Error processing video URL:", error);
+      return videoUrl;
+    }
+  };
+
+  // Handle video data update (for likes/dislikes)
   const handleVideoUpdate = (updatedData) => {
     console.log("🔄 Updating video data:", updatedData);
     setVideo((prev) => ({
@@ -99,18 +199,64 @@ const VideoPlayer = () => {
     }));
   };
 
+  // Handle comments update
   const handleCommentsUpdate = async () => {
     try {
       const response = await videoAPI.getVideo(id);
       setVideo((prev) => ({
         ...prev,
-        comments: response.data.comments,
+        comments: response.data.video.comments,
       }));
     } catch (err) {
       console.error("Error updating comments:", err);
     }
   };
 
+  // Handle subscribe/unsubscribe
+  const handleSubscribe = async () => {
+    if (!user) {
+      alert("Please login to subscribe to channels");
+      navigate("/auth");
+      return;
+    }
+
+    if (!video || !video.channelId) {
+      alert("Channel not found");
+      return;
+    }
+
+    try {
+      setSubscribing(true);
+      const channelId = video.channelId._id || video.channelId;
+
+      if (isSubscribed) {
+        await channelAPI.unsubscribe(channelId);
+        setIsSubscribed(false);
+        alert("Unsubscribed from channel");
+      } else {
+        await channelAPI.subscribe(channelId);
+        setIsSubscribed(true);
+        alert("Subscribed to channel!");
+      }
+
+      // Update channel subscriber count
+      if (channel) {
+        setChannel((prev) => ({
+          ...prev,
+          subscriberCount: isSubscribed
+            ? Math.max(0, (prev.subscriberCount || 1) - 1)
+            : (prev.subscriberCount || 0) + 1,
+        }));
+      }
+    } catch (error) {
+      console.error("Error subscribing:", error);
+      alert(error.message || "Failed to update subscription");
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  // Format numbers for display
   const formatViews = (views) => {
     if (!views) return "0 views";
     if (views >= 1000000) {
@@ -121,6 +267,7 @@ const VideoPlayer = () => {
     return `${views} views`;
   };
 
+  // Format date
   const formatDate = (dateString) => {
     if (!dateString) return "Recently";
     try {
@@ -140,10 +287,86 @@ const VideoPlayer = () => {
     }
   };
 
+  // Get channel ID safely
+  const getChannelId = () => {
+    if (!video) return null;
+
+    if (video.channelId) {
+      if (typeof video.channelId === "object") {
+        return video.channelId._id;
+      }
+      return video.channelId;
+    }
+
+    if (
+      video.uploader &&
+      video.uploader.channels &&
+      video.uploader.channels[0]
+    ) {
+      return video.uploader.channels[0];
+    }
+
+    return null;
+  };
+
+  // Handle view channel
+  const handleViewChannel = () => {
+    const channelId = getChannelId();
+    if (channelId) {
+      navigate(`/channel/${channelId}`);
+    } else {
+      alert("Channel information not available");
+    }
+  };
+
+  // Handle video error
+  const handleVideoError = () => {
+    console.log("Video player error, trying fallback...");
+    setShowFallbackPlayer(true);
+  };
+
+  // Handle share video
+  const handleShareVideo = () => {
+    const videoUrl = window.location.href;
+    if (navigator.share) {
+      navigator.share({
+        title: video?.title || "YouTube Video",
+        text: `Check out this video: ${video?.title}`,
+        url: videoUrl,
+      });
+    } else {
+      navigator.clipboard.writeText(videoUrl);
+      alert("Video link copied to clipboard!");
+    }
+  };
+
+  // Handle save video
+  const handleSaveVideo = () => {
+    if (!user) {
+      alert("Please login to save videos");
+      navigate("/auth");
+      return;
+    }
+    alert("Video saved to your library!");
+  };
+
+  // Handle report video
+  const handleReportVideo = () => {
+    const reason = prompt("Please enter reason for reporting this video:");
+    if (reason) {
+      alert("Thank you for reporting. We'll review this video.");
+    }
+  };
+
+  const safeVideoUrl = video ? getSafeVideoUrl(video.videoUrl) : null;
+  const isYouTube = safeVideoUrl && safeVideoUrl.includes("youtube.com/embed");
+
   if (loading) {
     return (
       <div className="video-player-loading">
-        <div className="loading-spinner"></div>
+        <div className="loading-spinner">
+          <FaSpinner className="spinner-icon" />
+        </div>
         <p>Loading video...</p>
       </div>
     );
@@ -153,191 +376,281 @@ const VideoPlayer = () => {
     return (
       <div className="video-player-error">
         <div className="error-icon">
-          <FaYoutube size={50} color="#ff0000" />
+          <FaExclamationTriangle size={60} color="#ff9800" />
         </div>
         <h2>{error || "Video not found"}</h2>
         <p>The video you're looking for doesn't exist or cannot be loaded.</p>
-        <button onClick={() => navigate("/")} className="back-home-btn">
-          <FaArrowLeft /> Back to Home
-        </button>
+        <div className="error-actions">
+          <button onClick={() => navigate("/")} className="back-home-btn">
+            <FaArrowLeft /> Back to Home
+          </button>
+          <button
+            onClick={() => window.location.reload()}
+            className="retry-btn"
+          >
+            <FaSpinner /> Try Again
+          </button>
+        </div>
       </div>
     );
   }
 
-  const videoEmbedUrl = getVideoEmbedUrl(video.videoUrl);
-  const isYouTube = videoEmbedUrl.includes("youtube.com/embed");
-
   return (
     <div className="video-player-container">
       {/* Back Navigation */}
-      <button onClick={() => navigate(-1)} className="back-button">
-        <FaArrowLeft /> Back
-      </button>
+      <div className="video-player-header">
+        <button onClick={() => navigate(-1)} className="back-button">
+          <FaArrowLeft /> Back
+        </button>
+        <div className="video-title-mobile">
+          <h1>{video.title}</h1>
+        </div>
+      </div>
 
-      {/* Video Player */}
-      <div className="video-player-wrapper">
-        <div className="video-player">
-          {playerError ? (
-            <div className="video-player-error-state">
-              <FaYoutube size={50} color="#ff0000" />
-              <p>Unable to play video. Trying fallback player...</p>
-              <button
-                onClick={() => setUseIframe(true)}
-                style={{
-                  padding: "10px 20px",
-                  background: "#065fd4",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "5px",
-                  cursor: "pointer",
-                  marginTop: "10px",
-                }}
-              >
-                Use Simple Player
-              </button>
-            </div>
-          ) : (
-            <>
-              {useIframe ? (
-                // Simple iframe player as fallback
-                <iframe
-                  src={videoEmbedUrl}
-                  title={video.title}
-                  frameBorder="0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    backgroundColor: "#000",
-                  }}
-                  onError={() => setPlayerError(true)}
-                />
+      {/* Main Content */}
+      <div className="video-player-main">
+        {/* Left Column - Video Player */}
+        <div className="video-player-column">
+          {/* Video Player */}
+          <div className="video-player-wrapper">
+            <div className="video-player">
+              {playerError || !safeVideoUrl ? (
+                <div className="video-player-error-state">
+                  <FaYoutube size={50} color="#FF0000" />
+                  <p>
+                    Unable to play video. The video may be private or
+                    unavailable.
+                  </p>
+                  <div className="video-url">
+                    {video.videoUrl
+                      ? `Original URL: ${video.videoUrl.substring(0, 50)}...`
+                      : "No video URL available"}
+                  </div>
+                  <a
+                    href={video.videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="external-link-btn"
+                  >
+                    <FaExternalLinkAlt /> Watch on YouTube
+                  </a>
+                </div>
               ) : (
-                // Try to use HTML5 video player first
-                <video
-                  controls
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    backgroundColor: "#000",
-                  }}
-                  onError={() => {
-                    console.log("❌ HTML5 video failed, trying iframe...");
-                    setUseIframe(true);
-                  }}
-                >
-                  {videoEmbedUrl && (
-                    <source src={videoEmbedUrl} type="video/mp4" />
+                <>
+                  {showFallbackPlayer || !isYouTube ? (
+                    // Fallback HTML5 video player
+                    <div className="fallback-player">
+                      <div className="player-header">
+                        <FaPlay /> Playing: {video.title}
+                      </div>
+                      <div className="video-notice">
+                        <p>
+                          Video preview not available. Please visit the original
+                          source:
+                        </p>
+                        <a
+                          href={video.videoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="external-link-btn"
+                        >
+                          <FaExternalLinkAlt /> Watch on YouTube
+                        </a>
+                      </div>
+                      {video.thumbnailUrl && (
+                        <img
+                          src={video.thumbnailUrl}
+                          alt={video.title}
+                          className="video-thumbnail-large"
+                          onError={(e) => {
+                            e.target.src =
+                              "https://via.placeholder.com/800x450?text=No+Thumbnail";
+                          }}
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    // YouTube embed iframe
+                    <div className="youtube-embed-container">
+                      <iframe
+                        src={safeVideoUrl}
+                        title={video.title}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        allowFullScreen
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        onError={handleVideoError}
+                      />
+                    </div>
                   )}
-                  Your browser does not support the video tag.
-                </video>
+                </>
               )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Debug Info - Remove in production */}
-      <div
-        style={{
-          padding: "10px",
-          margin: "10px 0",
-          background: "#f0f0f0",
-          borderRadius: "5px",
-          fontSize: "12px",
-          fontFamily: "monospace",
-        }}
-      >
-        <strong>Video Debug:</strong> ID: {video._id} | URL:{" "}
-        {video.videoUrl ? video.videoUrl.substring(0, 50) + "..." : "Missing"} |
-        Embed URL: {videoEmbedUrl ? "Yes" : "No"} | Is YouTube:{" "}
-        {isYouTube ? "Yes" : "No"}
-      </div>
-
-      {/* Video Info */}
-      <div className="video-info">
-        <h1 className="video-title">{video.title}</h1>
-
-        <div className="video-stats">
-          <span className="views-count">{formatViews(video.views)}</span>
-          <span className="upload-date">{formatDate(video.createdAt)}</span>
-        </div>
-
-        {/* Like/Dislike Buttons */}
-        <LikeDislikeButtons
-          videoId={video._id}
-          initialLikes={video.likes}
-          initialDislikes={video.dislikes}
-          onUpdate={handleVideoUpdate}
-        />
-
-        {/* Channel Info */}
-        <div className="channel-info">
-          <div className="channel-avatar">
-            <img
-              src={
-                video.uploader?.avatar ||
-                video.channelId?.owner?.avatar ||
-                "https://cdn-icons-png.flaticon.com/512/149/149071.png"
-              }
-              alt={video.uploader?.username || video.channelId?.channelName}
-              onError={(e) => {
-                e.target.src =
-                  "https://cdn-icons-png.flaticon.com/512/149/149071.png";
-              }}
-            />
-          </div>
-          <div className="channel-details">
-            <h3 className="channel-name">
-              {video.channelId?.channelName ||
-                video.uploader?.username ||
-                "Unknown Channel"}
-            </h3>
-            {video.channelId?.description && (
-              <p className="channel-description">
-                {video.channelId.description}
-              </p>
-            )}
-            <button
-              onClick={() => {
-                if (video.channelId) {
-                  navigate(
-                    `/channel/${video.channelId._id || video.channelId}`
-                  );
-                } else {
-                  alert("Channel information not available");
-                }
-              }}
-              className="view-channel-btn"
-            >
-              View Channel
-            </button>
-          </div>
-        </div>
-
-        {/* Video Description */}
-        <div className="video-description">
-          <h3>Description</h3>
-          <p>{video.description || "No description available."}</p>
-          {video.tags && video.tags.length > 0 && (
-            <div className="video-tags">
-              {video.tags.map((tag, index) => (
-                <span key={index} className="tag">
-                  #{tag}
-                </span>
-              ))}
             </div>
-          )}
+          </div>
+
+          {/* Video Info */}
+          <div className="video-info">
+            <h1 className="video-title">{video.title}</h1>
+
+            <div className="video-stats-row">
+              <div className="video-stats">
+                <span className="views-count">
+                  <FaEye /> {formatViews(video.views)}
+                </span>
+                <span className="upload-date">
+                  <FaCalendar /> {formatDate(video.createdAt)}
+                </span>
+                <span className="video-category">
+                  <FaTag /> {video.category}
+                </span>
+              </div>
+
+              <div className="video-actions-row">
+                <LikeDislikeButtons
+                  videoId={video._id}
+                  initialLikes={video.likes || []}
+                  initialDislikes={video.dislikes || []}
+                  onUpdate={handleVideoUpdate}
+                />
+                <button
+                  onClick={handleShareVideo}
+                  className="action-btn share-btn"
+                  title="Share video"
+                >
+                  <FaShare /> Share
+                </button>
+                <button
+                  onClick={handleSaveVideo}
+                  className="action-btn save-btn"
+                  title="Save video"
+                >
+                  <FaBookmark /> Save
+                </button>
+                <button
+                  onClick={handleReportVideo}
+                  className="action-btn report-btn"
+                  title="Report video"
+                >
+                  <FaFlag /> Report
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Channel Info */}
+          <div className="channel-info-section">
+            <div className="channel-info-header">
+              <div className="channel-avatar-name">
+                <div className="channel-avatar">
+                  <img
+                    src={
+                      video.uploader?.avatar ||
+                      video.channelId?.owner?.avatar ||
+                      video.channelId?.channelAvatar ||
+                      "https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                    }
+                    alt={
+                      video.uploader?.username ||
+                      video.channelId?.channelName ||
+                      "Channel"
+                    }
+                    onError={(e) => {
+                      e.target.src =
+                        "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+                    }}
+                  />
+                </div>
+                <div className="channel-details">
+                  <h3 className="channel-name">
+                    {video.channelId?.channelName ||
+                      video.uploader?.username ||
+                      "Unknown Channel"}
+                  </h3>
+                  <div className="channel-subscribers">
+                    {channel?.subscriberCount
+                      ? `${formatViews(channel.subscriberCount)} subscribers`
+                      : "Loading subscribers..."}
+                  </div>
+                </div>
+              </div>
+              <div className="channel-actions">
+                {user && user._id !== video.uploader?._id && (
+                  <button
+                    onClick={handleSubscribe}
+                    className={`subscribe-btn ${
+                      isSubscribed ? "subscribed" : ""
+                    }`}
+                    disabled={subscribing}
+                  >
+                    {subscribing ? (
+                      <FaSpinner className="spinner" />
+                    ) : isSubscribed ? (
+                      "Subscribed"
+                    ) : (
+                      "Subscribe"
+                    )}
+                  </button>
+                )}
+                <button
+                  onClick={handleViewChannel}
+                  className="view-channel-btn"
+                >
+                  View Channel
+                </button>
+              </div>
+            </div>
+            {video.channelId?.description && (
+              <div className="channel-description">
+                <p>{video.channelId.description}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Video Description */}
+          <div className="video-description-section">
+            <div className="description-header">
+              <h3>Description</h3>
+              <div className="description-stats">
+                <span>{formatViews(video.views)} views</span>
+                <span>{formatDate(video.createdAt)}</span>
+              </div>
+            </div>
+            <div className="description-content">
+              <p>{video.description || "No description available."}</p>
+              {video.tags && video.tags.length > 0 && (
+                <div className="video-tags-section">
+                  <h4>Tags</h4>
+                  <div className="video-tags">
+                    {video.tags.map((tag, index) => (
+                      <span key={index} className="tag">
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column - Comments */}
+        <div className="comments-column">
+          <CommentSection
+            videoId={video._id}
+            initialComments={video.comments || []}
+            onUpdate={handleCommentsUpdate}
+          />
         </div>
       </div>
 
-      {/* Comments Section */}
-      <CommentSection
-        videoId={video._id}
-        initialComments={video.comments || []}
-        onUpdate={handleCommentsUpdate}
-      />
+      {/* Mobile Comments Section */}
+      <div className="mobile-comments-section">
+        <CommentSection
+          videoId={video._id}
+          initialComments={video.comments || []}
+          onUpdate={handleCommentsUpdate}
+        />
+      </div>
     </div>
   );
 };

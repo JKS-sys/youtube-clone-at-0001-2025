@@ -14,7 +14,6 @@ const channelSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
     },
     description: {
       type: String,
@@ -23,7 +22,11 @@ const channelSchema = new mongoose.Schema(
     },
     channelBanner: {
       type: String,
-      default: "",
+      default: "https://picsum.photos/1200/300",
+    },
+    channelAvatar: {
+      type: String,
+      default: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
     },
     subscribers: [
       {
@@ -37,11 +40,33 @@ const channelSchema = new mongoose.Schema(
         ref: "Video",
       },
     ],
-    createdAt: {
-      type: Date,
-      default: Date.now,
+    totalViews: {
+      type: Number,
+      default: 0,
     },
-    updatedAt: {
+    verified: {
+      type: Boolean,
+      default: false,
+    },
+    website: {
+      type: String,
+    },
+    location: {
+      type: String,
+    },
+    socialLinks: {
+      twitter: String,
+      facebook: String,
+      instagram: String,
+      linkedin: String,
+    },
+    customLinks: [
+      {
+        title: String,
+        url: String,
+      },
+    ],
+    createdAt: {
       type: Date,
       default: Date.now,
     },
@@ -51,14 +76,9 @@ const channelSchema = new mongoose.Schema(
   }
 );
 
-// Pre-save middleware to update timestamps
-channelSchema.pre("save", function (next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-// Index for faster queries
+// Indexes
+channelSchema.index({ channelName: "text", description: "text" });
 channelSchema.index({ owner: 1 });
-channelSchema.index({ channelName: 1 });
+channelSchema.index({ createdAt: -1 });
 
 export default mongoose.model("Channel", channelSchema);

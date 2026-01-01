@@ -3,44 +3,147 @@ import { protect } from "../middleware/auth.js";
 import Channel from "../models/Channel.js";
 import Video from "../models/Video.js";
 import User from "../models/User.js";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
-router.get("/check", protect, async (req, res) => {
+// ✅ Get all channels
+router.get("/", async (req, res) => {
   try {
-    const channel = await Channel.findOne({ owner: req.user._id });
+    const { search, limit = 20 } = req.query;
+    let query = {};
 
-    if (channel) {
-      return res.json({
-        hasChannel: true,
-        channel: {
-          _id: channel._id,
-          channelName: channel.channelName,
-          description: channel.description,
-        },
-      });
+    if (search) {
+      query.channelName = { $regex: search, $options: "i" };
     }
 
+    const channels = await Channel.find(query)
+      .populate("owner", "username avatar")
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
     res.json({
-      hasChannel: false,
-      message: "User does not have a channel",
+      success: true,
+      count: channels.length,
+      channels: channels,
     });
   } catch (error) {
-    console.error("Error checking channel:", error);
-    res.status(500).json({ message: "Server error" });
+    console.error("❌ Error fetching channels:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch channels",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 });
 
+// ✅ Get channel by ID or name
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if ID is provided
+    if (!id || id === "undefined" || id === "null") {
+      return res.status(400).json({
+        success: false,
+        message: "Channel ID is required",
+      });
+    }
+
+    console.log(`📡 Fetching channel with ID/name: ${id}`);
+
+    let channel = null;
+
+    // Try to find by ID first (if it's a valid MongoDB ObjectId)
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      channel = await Channel.findById(id)
+        .populate("owner", "username avatar email")
+        .populate("subscribers", "username avatar");
+    }
+
+    // If not found by ID, try by channel name (case-insensitive)
+    if (!channel) {
+      channel = await Channel.findOne({
+        channelName: new RegExp(`^${id}$`, "i"),
+      })
+        .populate("owner", "username avatar email")
+        .populate("subscribers", "username avatar");
+    }
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found",
+        details: "No channel exists with the provided ID or name",
+      });
+    }
+
+    // Get videos for this channel
+    const videos = await Video.find({
+      channelId: channel._id,
+      isPublished: true,
+    })
+      .populate("uploader", "username avatar")
+      .populate("channelId", "channelName channelAvatar")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    // Calculate total views
+    const totalViews = videos.reduce(
+      (sum, video) => sum + (video.views || 0),
+      0
+    );
+
+    // Calculate subscriber count
+    const subscriberCount = channel.subscribers?.length || 0;
+
+    // Prepare response
+    const response = {
+      success: true,
+      channel: {
+        _id: channel._id,
+        channelName: channel.channelName,
+        owner: channel.owner,
+        description: channel.description,
+        channelBanner: channel.channelBanner,
+        channelAvatar: channel.channelAvatar,
+        subscribers: channel.subscribers,
+        videos: videos,
+        totalViews: totalViews,
+        videoCount: videos.length,
+        subscriberCount: subscriberCount,
+        verified: channel.verified || false,
+        website: channel.website,
+        location: channel.location,
+        socialLinks: channel.socialLinks,
+        customLinks: channel.customLinks,
+        createdAt: channel.createdAt,
+        updatedAt: channel.updatedAt,
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("❌ Error fetching channel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch channel",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// ✅ Create a new channel
 router.post("/", protect, async (req, res) => {
   try {
     const { channelName, description, channelBanner } = req.body;
 
-    // Step 1: Check if user already has a channel
+    // Check if user already has a channel
     const existingChannel = await Channel.findOne({ owner: req.user._id });
     if (existingChannel) {
       return res.status(400).json({
-        message:
-          "You already have a channel. You can only create one channel per account.",
+        success: false,
+        message: "You already have a channel",
         existingChannel: {
           _id: existingChannel._id,
           channelName: existingChannel.channelName,
@@ -48,199 +151,147 @@ router.post("/", protect, async (req, res) => {
       });
     }
 
-    // Step 2: Validate input
+    // Validate input
     if (!channelName || channelName.trim().length < 3) {
       return res.status(400).json({
+        success: false,
         message: "Channel name must be at least 3 characters long",
       });
     }
 
-    if (channelName.trim().length > 50) {
-      return res.status(400).json({
-        message: "Channel name cannot exceed 50 characters",
-      });
-    }
-
-    // Step 3: Check if channel name is available globally
-    const channelNameExists = await Channel.findOne({
+    // Check if channel name is available
+    const channelExists = await Channel.findOne({
       channelName: { $regex: new RegExp(`^${channelName.trim()}$`, "i") },
     });
 
-    if (channelNameExists) {
+    if (channelExists) {
       return res.status(400).json({
-        message: "Channel name already exists. Please choose a different name.",
+        success: false,
+        message: "Channel name already exists",
       });
     }
 
-    // Step 4: Create the channel
+    // Create channel
     const channel = await Channel.create({
       channelName: channelName.trim(),
       owner: req.user._id,
       description: description?.trim() || "",
-      channelBanner: channelBanner?.trim() || "",
+      channelBanner: channelBanner?.trim() || "https://picsum.photos/1200/300",
+      channelAvatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(
+        channelName.trim()
+      )}&background=random&color=fff&bold=true`,
     });
 
-    // Step 5: Update user's hasChannel flag
+    // Update user
     await User.findByIdAndUpdate(req.user._id, {
       $push: { channels: channel._id },
       $set: { hasChannel: true },
     });
 
-    // Step 6: Return populated channel
+    // Populate and return
     const populatedChannel = await Channel.findById(channel._id).populate(
       "owner",
       "username avatar"
     );
 
-    console.log(
-      `✅ Channel "${channel.channelName}" created for user: ${req.user.username}`
-    );
-
     res.status(201).json({
+      success: true,
       message: "Channel created successfully",
       channel: populatedChannel,
     });
   } catch (error) {
     console.error("❌ Error creating channel:", error);
-
-    if (error.code === 11000) {
-      return res.status(400).json({
-        message: "Channel creation failed. You may already have a channel.",
-      });
-    }
-
     res.status(500).json({
-      message: "Failed to create channel. Please try again.",
+      success: false,
+      message: "Failed to create channel",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// Get channel by ID
-router.get("/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-      return res.status(400).json({
-        message: "Invalid channel ID format",
-      });
-    }
-
-    const channel = await Channel.findById(id)
-      .populate("owner", "username avatar")
-      .populate("subscribers", "username avatar");
-
-    if (!channel) {
-      return res.status(404).json({
-        message: "Channel not found",
-      });
-    }
-
-    // Get videos for this channel
-    const videos = await Video.find({ channelId: id })
-      .populate("uploader", "username avatar")
-      .populate("channelId", "channelName")
-      .sort({ createdAt: -1 });
-
-    const response = {
-      ...channel.toObject(),
-      videos: videos,
-      videoCount: videos.length,
-      subscriberCount: channel.subscribers?.length || 0,
-      hasChannel: true,
-    };
-
-    res.json(response);
-  } catch (error) {
-    console.error("Error fetching channel:", error);
-    res.status(500).json({
-      message: "Failed to fetch channel",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
-  }
-});
-
-// Get user's channel
+// ✅ Get user's channel (for management)
 router.get("/user/me", protect, async (req, res) => {
   try {
-    const channel = await Channel.findOne({ owner: req.user._id })
-      .populate("owner", "username avatar")
-      .populate("subscribers", "username avatar");
+    const channel = await Channel.findOne({ owner: req.user._id }).populate(
+      "owner",
+      "username avatar email"
+    );
 
     if (!channel) {
       return res.status(404).json({
+        success: false,
         message: "You don't have a channel yet",
         hasChannel: false,
       });
     }
 
-    // Get videos for this channel
+    // Get all videos for this channel
     const videos = await Video.find({ channelId: channel._id })
       .populate("uploader", "username avatar")
-      .populate("channelId", "channelName")
       .sort({ createdAt: -1 });
 
+    // Calculate total views
+    const totalViews = videos.reduce(
+      (sum, video) => sum + (video.views || 0),
+      0
+    );
+
+    // Get subscriber count
+    const subscriberCount = channel.subscribers?.length || 0;
+
     const response = {
-      ...channel.toObject(),
-      videos: videos,
-      videoCount: videos.length,
-      subscriberCount: channel.subscribers?.length || 0,
+      success: true,
       hasChannel: true,
+      channel: {
+        ...channel.toObject(),
+        videoCount: videos.length,
+        subscriberCount: subscriberCount,
+        totalViews: totalViews,
+      },
+      videos: videos,
     };
 
     res.json(response);
   } catch (error) {
-    console.error("Error fetching user channel:", error);
+    console.error("❌ Error fetching user channel:", error);
     res.status(500).json({
+      success: false,
       message: "Failed to fetch your channel",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// Get channels by user ID
-router.get("/user/:userId", async (req, res) => {
+// ✅ Update channel settings
+router.put("/:id", protect, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { id } = req.params;
 
-    if (!userId.match(/^[0-9a-fA-F]{24}$/)) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
-        message: "Invalid user ID format",
+        success: false,
+        message: "Invalid channel ID",
       });
     }
 
-    const channels = await Channel.find({ owner: userId })
-      .populate("owner", "username avatar")
-      .sort({ createdAt: -1 });
-
-    res.json(channels);
-  } catch (error) {
-    console.error("Error fetching user channels:", error);
-    res.status(500).json({
-      message: "Failed to fetch user channels",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
-    });
-  }
-});
-
-// Update channel
-router.put("/:id", protect, async (req, res) => {
-  try {
-    const channel = await Channel.findById(req.params.id);
+    const channel = await Channel.findById(id);
 
     if (!channel) {
-      return res.status(404).json({ message: "Channel not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found",
+      });
     }
 
-    // Check if user owns the channel
+    // Check ownership
     if (channel.owner.toString() !== req.user._id.toString()) {
       return res.status(403).json({
+        success: false,
         message: "Not authorized to edit this channel",
       });
     }
 
-    // Check if new channel name already exists (if being changed)
+    // Check if new channel name is available
     if (req.body.channelName && req.body.channelName !== channel.channelName) {
       const existingChannel = await Channel.findOne({
         channelName: req.body.channelName,
@@ -248,49 +299,64 @@ router.put("/:id", protect, async (req, res) => {
       });
       if (existingChannel) {
         return res.status(400).json({
+          success: false,
           message: "Channel name already exists",
         });
       }
     }
 
     const updatedChannel = await Channel.findByIdAndUpdate(
-      req.params.id,
+      id,
       {
         ...req.body,
         channelName: req.body.channelName?.trim(),
         description: req.body.description?.trim() || channel.description,
         channelBanner: req.body.channelBanner?.trim() || channel.channelBanner,
+        updatedAt: new Date(),
       },
       { new: true, runValidators: true }
-    )
-      .populate("owner", "username avatar")
-      .populate("subscribers", "username avatar");
+    ).populate("owner", "username avatar");
 
     res.json({
+      success: true,
       message: "Channel updated successfully",
       channel: updatedChannel,
     });
   } catch (error) {
-    console.error("Error updating channel:", error);
+    console.error("❌ Error updating channel:", error);
     res.status(500).json({
+      success: false,
       message: "Failed to update channel",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
 });
 
-// Delete channel
+// ✅ Delete channel
 router.delete("/:id", protect, async (req, res) => {
   try {
-    const channel = await Channel.findById(req.params.id);
+    const { id } = req.params;
 
-    if (!channel) {
-      return res.status(404).json({ message: "Channel not found" });
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid channel ID",
+      });
     }
 
-    // Check if user owns the channel
+    const channel = await Channel.findById(id);
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found",
+      });
+    }
+
+    // Check ownership
     if (channel.owner.toString() !== req.user._id.toString()) {
       return res.status(403).json({
+        success: false,
         message: "Not authorized to delete this channel",
       });
     }
@@ -298,7 +364,7 @@ router.delete("/:id", protect, async (req, res) => {
     // Delete all videos in the channel
     await Video.deleteMany({ channelId: channel._id });
 
-    // Remove channel from user's channels array
+    // Remove channel from user
     await User.findByIdAndUpdate(req.user._id, {
       $pull: { channels: channel._id },
       $set: { hasChannel: false },
@@ -306,18 +372,114 @@ router.delete("/:id", protect, async (req, res) => {
 
     await channel.deleteOne();
 
-    console.log(
-      `✅ Channel "${channel.channelName}" deleted by user: ${req.user.username}`
-    );
-
     res.json({
+      success: true,
       message: "Channel deleted successfully",
       deletedChannelId: channel._id,
     });
   } catch (error) {
-    console.error("Error deleting channel:", error);
+    console.error("❌ Error deleting channel:", error);
     res.status(500).json({
+      success: false,
       message: "Failed to delete channel",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// ✅ Subscribe to channel
+router.post("/:id/subscribe", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid channel ID",
+      });
+    }
+
+    const channel = await Channel.findById(id);
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if already subscribed
+    if (channel.subscribers.includes(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Already subscribed to this channel",
+      });
+    }
+
+    // Add subscriber
+    channel.subscribers.push(req.user._id);
+    await channel.save();
+
+    res.json({
+      success: true,
+      message: "Subscribed successfully",
+      subscriberCount: channel.subscribers.length,
+    });
+  } catch (error) {
+    console.error("❌ Error subscribing to channel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to subscribe",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+});
+
+// ✅ Unsubscribe from channel
+router.delete("/:id/subscribe", protect, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid channel ID",
+      });
+    }
+
+    const channel = await Channel.findById(id);
+
+    if (!channel) {
+      return res.status(404).json({
+        success: false,
+        message: "Channel not found",
+      });
+    }
+
+    // Check if subscribed
+    if (!channel.subscribers.includes(req.user._id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Not subscribed to this channel",
+      });
+    }
+
+    // Remove subscriber
+    channel.subscribers = channel.subscribers.filter(
+      (subId) => subId.toString() !== req.user._id.toString()
+    );
+    await channel.save();
+
+    res.json({
+      success: true,
+      message: "Unsubscribed successfully",
+      subscriberCount: channel.subscribers.length,
+    });
+  } catch (error) {
+    console.error("❌ Error unsubscribing from channel:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to unsubscribe",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
