@@ -160,6 +160,11 @@
   color: #606060;
 }
 
+.comment-section__cancel-btn {
+  background-color: #f0f0f0;
+  color: #606060;
+}
+
 .comment-section__cancel-btn:hover:not(:disabled) {
   background-color: #e0e0e0;
 }
@@ -370,7 +375,6 @@
 .comment__edit-actions {
   display: flex;
   gap: 10px;
-  justify-content: flex-end;
 }
 
 .comment__save-btn,
